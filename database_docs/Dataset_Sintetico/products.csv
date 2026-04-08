@@ -1,0 +1,46 @@
+supplier_ids,id,product_code,product_name,standard_cost,list_price,reorder_level,target_level,quantity_per_unit,discontinued,minimum_reorder_quantity,category
+1,sdv-id-hdTIWi,NWTCM-96,Northwind Traders Hot Cereal,2.0032,1.53,13,87,4 boxes,0,,Canned Fruit & Vegetables
+1,sdv-id-LWxTOc,NWTB-87,Northwind Traders Pears,5.6015,20.73,10,58,3 boxes,0,,Canned Meat
+6,sdv-id-oPCBdm,NWTBGM-19,Northwind Traders Fruit Cocktail,31.0884,43.94,10,37,30 gift boxes,0,10.0,Canned Meat
+8,sdv-id-kUToXT,NWTBGM-86,Northwind Traders Cake Mix,4.2109,6.24,13,163,15.25 OZ,0,,Dried Fruit & Nuts
+6,sdv-id-nQYOjC,NWTCO-77,Northwind Traders Dried Plums,1.075,3.02,11,181,24 - 4 oz tins,0,21.0,Dairy products
+8,sdv-id-eFqBUf,NWTCM-95,Northwind Traders Smoked Salmon,2.1159,4.13,10,158,24 - 200 g pkgs.,0,,Baked Goods & Mixes
+6,sdv-id-JLSVaU,NWTCFV-88,Northwind Traders Pears,9.5185,1.21,12,51,100 count per box,0,,Beverages
+8,sdv-id-AXDrYT,NWTG-52,Northwind Traders Chocolate,10.5659,65.62,10,86,36 boxes,0,10.0,Candy
+8,sdv-id-ASbBSK,NWTS-66,Northwind Traders Hot Pepper Sauce,6.5949,1.22,10,38,24 - 8 oz jars,0,10.0,Grains
+8,sdv-id-gMWeRt,NWTSO-41,Northwind Traders Dried Apples,46.5659,49.39,10,34,15.25 OZ,0,10.0,Beverages
+1,sdv-id-wKphky,NWTCFV-91,Northwind Traders Corn,1.045,1.2,10,199,1 lb bag,0,19.0,Cereal
+3,sdv-id-bbZJzX,NWTBGM-85,Northwind Traders Tea,6.7569,12.11,24,194,4 boxes,0,10.0,Cereal
+1,sdv-id-ucLwVD,NWTDFN-7,Northwind Traders Dried Pears,14.2051,2.11,11,41,24 - 250 g pkgs.,0,19.0,Canned Meat
+10,sdv-id-NgSozC,NWTCO-77,Northwind Traders Green Tea,29.4913,59.23,10,116,16 - 500 g tins,0,10.0,Condiments
+1,sdv-id-FqhFTW,NWTCFV-92,Northwind Traders Corn,1.7211,1.5,12,194,5 oz,0,11.0,Soups
+10,sdv-id-yaJXsz,NWTBGM-85,Northwind Traders Dried Plums,3.4402,1.2,20,75,3 boxes,0,22.0,Beverages
+2;6,sdv-id-ylYJmB,NWTJP-6,Northwind Traders Dried Pears,4.9071,18.38,10,186,12 - 8 oz jars,0,11.0,Pasta
+1,sdv-id-keHzDb,NWTCFV-88,Northwind Traders Green Beans,4.5923,3.55,19,200,1 lb bag,0,13.0,Pasta
+2;6,sdv-id-DpuJEA,NWTCO-4,Northwind Traders Cajun Seasoning,51.8603,58.95,55,198,10 boxes x 20 bags,0,17.0,Beverages
+9,sdv-id-dDVkzE,NWTCM-96,Northwind Traders Vegetable Soup,1.0007,1.21,18,198,14.5 OZ,0,,Cereal
+10,sdv-id-zecnOM,NWTDFN-74,Northwind Traders Mozzarella,13.7651,2.18,31,199,14.5 OZ,0,18.0,Dried Fruit & Nuts
+6,sdv-id-BrphOu,NWTS-66,Northwind Traders Hot Pepper Sauce,7.1564,5.44,38,200,20 bags per box,0,18.0,Cereal
+2;6,sdv-id-udvKGk,NWTBGM-21,Northwind Traders Beer,42.1935,26.98,20,129,24 - 250 g pkgs.,0,,Beverages
+8,sdv-id-RxZdbG,NWTCO-77,Northwind Traders Tomato Sauce,2.2187,1.21,30,179,32 - 8 oz bottles,0,,Dried Fruit & Nuts
+1,sdv-id-wLUavk,NWTSO-41,Northwind Traders Dried Apples,23.8906,25.91,15,142,24 pkgs. x 4 pieces,0,,Canned Fruit & Vegetables
+8,sdv-id-ZdPqDD,NWTCFV-89,Northwind Traders Green Beans,1.1107,1.27,90,200,15.25 OZ,0,30.0,Condiments
+6,sdv-id-HVSjAF,NWTBGM-85,Northwind Traders Brownie Mix,6.0483,2.1,10,97,,0,10.0,Baked Goods & Mixes
+1,sdv-id-DjWcWV,NWTSO-99,Northwind Traders Chicken Soup,1.0022,1.36,10,188,5 oz,0,,"Chips, Snacks"
+1,sdv-id-YFwDje,NWTBGM-86,Northwind Traders Cherry Pie Filling,4.6445,6.18,24,199,16 - 2 kg boxes,0,15.0,Canned Fruit & Vegetables
+6,sdv-id-rukOEb,NWTSO-98,Northwind Traders Chicken Soup,1.0865,1.2,73,199,5 oz,0,,Dried Fruit & Nuts
+1,sdv-id-ZjPBrf,NWTBGM-86,Northwind Traders Cake Mix,26.3849,42.22,13,61,20 bags per box,0,10.0,Baked Goods & Mixes
+6,sdv-id-UTtCpw,NWTCFV-17,Northwind Traders Fruit Cocktail,12.8382,11.63,14,139,24 - 4 oz tins,0,14.0,Dairy products
+1,sdv-id-ApJOZa,NWTB-34,Northwind Traders Clam Chowder,54.5378,37.84,15,92,16 - 500 g tins,0,12.0,Cereal
+9,sdv-id-YDpccy,NWTSO-99,Northwind Traders Chicken Soup,3.3773,2.28,53,156,5 oz,0,13.0,Cereal
+7,sdv-id-ZRJFBM,NWTCFV-17,Northwind Traders Scones,60.3449,81.0,10,102,50 - 300 g pkgs.,0,10.0,Soups
+10,sdv-id-ZSRPMJ,NWTCM-40,Northwind Traders Long Grain Rice,60.75,40.66,10,199,30 gift boxes,0,10.0,Condiments
+2;6,sdv-id-TGIscL,NWTP-56,Northwind Traders Ravioli,27.6421,21.76,11,68,12 - 12 oz cans,0,11.0,Beverages
+6,sdv-id-Tenrkq,NWTCFV-94,Northwind Traders Tuna Fish,3.5853,1.56,10,125,14.5 OZ,0,10.0,Canned Fruit & Vegetables
+2;6,sdv-id-tVhQTx,NWTJP-6,Northwind Traders Olive Oil,60.75,65.92,33,119,16 - 500 g tins,0,,Beverages
+10,sdv-id-zhnPQL,NWTD-72,Northwind Traders Almonds,1.4493,1.3,10,70,24 pkgs. x 4 pieces,0,11.0,Oil
+1,sdv-id-kiyMss,NWTCA-48,Northwind Traders Beer,2.0277,1.32,10,136,10 pkgs,0,10.0,Dried Fruit & Nuts
+6,sdv-id-TrdORb,NWTSO-41,Northwind Traders Coffee,39.5926,14.03,18,132,1 lb bag,0,19.0,Dried Fruit & Nuts
+10,sdv-id-hcazJw,NWTCS-83,Northwind Traders Brownie Mix,5.4464,2.06,10,63,32 - 8 oz bottles,0,12.0,"Jams, Preserves"
+1,sdv-id-ILGfXt,NWTD-72,Northwind Traders Granola,6.5209,11.79,34,200,15.25 OZ,0,,Cereal
+9,sdv-id-bFBNOf,NWTCFV-92,Northwind Traders Peas,1.7651,1.3,10,187,,0,13.0,"Chips, Snacks"

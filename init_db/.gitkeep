@@ -1,0 +1,3 @@
+Questo file serve a tracciare la cartella init_db da parte di git e a darti indicazioni.
+Trascina all'interno di questa cartella ("init_db") il tuo dump "schema.sql" o di setup del database Northwind MySQL che possiedi!
+Durante il primissimo avvio di docker-compose up, MySQL andrà a guardare il contenuto di questa cartella e ricostruirà in automatico il db.

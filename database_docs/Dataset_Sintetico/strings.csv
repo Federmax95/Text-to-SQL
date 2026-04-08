@@ -1,0 +1,63 @@
+string_id,string_data
+sdv-id-oUuKRX,Discounted price is below cost!
+sdv-id-lpBbDb,There was an error trying to cancel this order.
+sdv-id-phkBfE,Product successfully restocked.
+sdv-id-AnqhBB,Cannot post product to inventory without specifying received date!
+sdv-id-XsuWZM,Order is already invoiced. Do you want to print the invoice?
+sdv-id-OHIdZA,Cannot cancel an order that has items received and posted to inventory.
+sdv-id-siRMhx,Do you want to post received product to inventory?
+sdv-id-rTncaq,Purchase successfully submitted for approval
+sdv-id-XrlkJk,Cannot cancel an order that has items received and posted to inventory.
+sdv-id-yLYcNX,Purchase cannot be approved
+sdv-id-EbjMBE,You cannot remove purchase line items already posted to inventory!
+sdv-id-ORDZRh,"Fill back ordered product, Order #|"
+sdv-id-tmzFrR,Order is already invoiced. Do you want to print the invoice?
+sdv-id-MZNlAn,You cannot remove purchase line items already posted to inventory!
+sdv-id-AVyRex,Your order was successfully canceled.
+sdv-id-FuppEx,Purchase order must contain completed line items before it can be approved
+sdv-id-WRyFKV,Product successfully restocked.
+sdv-id-kRFngy,Must first select reported!
+sdv-id-njeBcz,| product(s) were successfully restocked.  Do you want to view the restocking report?
+sdv-id-aygmlC,Product does not need restocking! Product is already at desired inventory level.
+sdv-id-DpnOTj,"Sorry, purchase order does not contain line items"
+sdv-id-UjTOTA,There was an error removing one or more purchase line items.
+sdv-id-fAkPFa,You must supply a Unit Cost.
+sdv-id-TkBjjk,Canceling an order will permanently delete the order.  Are you sure you want to cancel?
+sdv-id-tDjkpb,Cannot remove posted inventory!
+sdv-id-yzKKBf,"Initialize purchase, orders, and inventory data?"
+sdv-id-xQlroK,Must first specify salesperson!
+sdv-id-xvHMwY,Your order was successfully canceled.
+sdv-id-kaHPdL,You cannot modify price for purchased product already received or posted to inventory.
+sdv-id-HbadEE,Restocking will generate purchase orders for all products below desired inventory levels.  Do you want to continue?
+sdv-id-bARoJz,Must first specify salesperson!
+sdv-id-oevbjv,Do you want to post received product to inventory?
+sdv-id-raqHQP,Do you want to continue?
+sdv-id-RpODCs,Discounted price is below cost!
+sdv-id-LtrwQQ,There are no products below their respective reorder levels
+sdv-id-TcGoJv,The invoice for this order has not yet been created.
+sdv-id-bywGpg,Your order was successfully canceled.
+sdv-id-xDvLRg,Cannot create invoice!  Inventory has not been allocated for each specified product.
+sdv-id-DKLDzk,Cannot create purchase order.  No suppliers listed for specified product
+sdv-id-KRCOiP,"Changing supplier will remove purchase line items, continue?"
+sdv-id-WrTPWQ,There was an error removing one or more purchase line items.
+sdv-id-AVWCLR,Back ordered product filled for Order #|
+sdv-id-vfYrlM,"Sorry, you do not have permission to approve purchases."
+sdv-id-ETMZxD,There was an error attempting to restock inventory levels.  | product(s) were successfully restocked.
+sdv-id-JlGmVB,"Sorry, you do not have permission to approve purchases."
+sdv-id-nfTZeI,You cannot modify quantity for purchased product already received or posted to inventory.
+sdv-id-glbYOu,Do you want to continue?
+sdv-id-OrsTSA,You cannot modify price for purchased product already received or posted to inventory.
+sdv-id-mClRKR,"Sorry, purchase order does not contain line items"
+sdv-id-TroeSW,There are orders with this product on back order.  Would you like to fill them now?
+sdv-id-eBzyGt,You cannot remove purchase line items already posted to inventory!
+sdv-id-gbQjYo,| product(s) were successfully restocked.  Do you want to view the restocking report?
+sdv-id-awulZP,Must first select reported!
+sdv-id-dhCDyJ,You cannot remove purchase line items already posted to inventory!
+sdv-id-vjxBxe,Must first specify salesperson!
+sdv-id-UKyoBy,Purchase cannot be approved
+sdv-id-GvnaGE,Shipping information is not complete.  Please specify all shipping information and try again.
+sdv-id-fUkgpP,Product restocking failed!
+sdv-id-vIuGaZ,Order must first be marked shipped before closing.
+sdv-id-UPigZA,There was an error attempting to restock inventory levels.  | product(s) were successfully restocked.
+sdv-id-fkfdyx,"Sorry, you do not have permission to approve purchases."
+sdv-id-nEiPuE,"Fill back ordered product, Order #|"

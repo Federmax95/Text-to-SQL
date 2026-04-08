@@ -1,0 +1,210 @@
+Database utilizzato northwind
+
+Tabelle:
+	Table: customers
+	- id (int)
+	- company (varchar(50))
+	- last_name (varchar(50))
+	- first_name (varchar(50))
+	- email_address (varchar(50))
+	- job_title (varchar(50))
+	- business_phone (varchar(25))
+	- fax_number (varchar(25))
+	- address (longtext)
+	- city (varchar(50))
+	- state_province (varchar(50))
+	- zip_postal_code (varchar(15))
+	- country_region (varchar(50))
+
+	Table: employee_privileges
+	- employee_id (int)
+	- privilege_id (int)
+
+	Table: employees
+	- id (int)
+	- company (varchar(50))
+	- last_name (varchar(50))
+	- first_name (varchar(50))
+	- email_address (varchar(50))
+	- job_title (varchar(50))
+	- business_phone (varchar(25))
+	- home_phone (varchar(25))
+	- fax_number (varchar(25))
+	- address (longtext)
+	- city (varchar(50))
+	- state_province (varchar(50))
+	- zip_postal_code (varchar(15))
+	- country_region (varchar(50))
+	- web_page (longtext)
+	- notes (longtext)
+
+	Table: inventory_transaction_types
+	- id (tinyint)
+	- type_name (varchar(50))
+
+	Table: inventory_transactions
+	- id (int)
+	- transaction_type (tinyint)
+	- transaction_created_date (datetime)
+	- transaction_modified_date (datetime)
+	- product_id (int)
+	- quantity (int)
+	- purchase_order_id (int)
+	- customer_order_id (int)
+
+	Table: invoices
+	- id (int)
+	- order_id (int)
+	- invoice_date (datetime)
+	- tax (decimal(19,4))
+	- shipping (decimal(19,4))
+	- amount_due (decimal(19,4))
+
+	Table: order_details
+	- id (int)
+	- order_id (int)
+	- product_id (int)
+	- quantity (decimal(18,4))
+	- unit_price (decimal(19,4))
+	- discount (double)
+	- status_id (int)
+	- purchase_order_id (int)
+	- inventory_id (int)
+
+	Table: order_details_status
+	- id (int)
+	- status_name (varchar(50))
+
+	Table: orders
+	- id (int)
+	- employee_id (int)
+	- customer_id (int)
+	- order_date (datetime)
+	- shipped_date (datetime)
+	- shipper_id (int)
+	- ship_name (varchar(50))
+	- ship_address (longtext)
+	- ship_city (varchar(50))
+	- ship_state_province (varchar(50))
+	- ship_zip_postal_code (varchar(50))
+	- ship_country_region (varchar(50))
+	- shipping_fee (decimal(19,4))
+	- taxes (decimal(19,4))
+	- payment_type (varchar(50))
+	- paid_date (datetime)
+	- notes (longtext)
+	- tax_rate (double)
+	- tax_status_id (tinyint)
+	- status_id (tinyint)
+
+	Table: orders_status
+	- id (tinyint)
+	- status_name (varchar(50))
+
+	Table: orders_tax_status
+	- id (tinyint)
+	- tax_status_name (varchar(50))
+
+	Table: privileges
+	- id (int)
+	- privilege_name (varchar(50))
+
+	Table: products
+	- supplier_ids (longtext)
+	- id (int)
+	- product_code (varchar(25))
+	- product_name (varchar(50))
+	- standard_cost (decimal(19,4))
+	- list_price (decimal(19,4))
+	- reorder_level (int)
+	- target_level (int)
+	- quantity_per_unit (varchar(50))
+	- discontinued (tinyint(1))
+	- minimum_reorder_quantity (int)
+	- category (varchar(50))
+
+	Table: purchase_order_details
+	- id (int)
+	- purchase_order_id (int)
+	- product_id (int)
+	- quantity (decimal(18,4))
+	- unit_cost (decimal(19,4))
+	- date_received (datetime)
+	- posted_to_inventory (tinyint(1))
+	- inventory_id (int)
+
+	Table: purchase_order_status
+	- id (int)
+	- status (varchar(50))
+
+	Table: purchase_orders
+	- id (int)
+	- supplier_id (int)
+	- created_by (int)
+	- submitted_date (datetime)
+	- creation_date (datetime)
+	- status_id (int)
+	- shipping_fee (decimal(19,4))
+	- taxes (decimal(19,4))
+	- payment_amount (decimal(19,4))
+	- notes (longtext)
+	- approved_by (int)
+	- approved_date (datetime)
+	- submitted_by (int)
+
+	Table: sales_reports
+	- group_by (varchar(50))
+	- display (varchar(50))
+	- title (varchar(50))
+	- filter_row_source (longtext)
+	- default (tinyint(1))
+
+	Table: shippers
+	- id (int)
+	- company (varchar(50))
+	- last_name (varchar(50))
+	- first_name (varchar(50))
+	- email_address (varchar(50))
+	- address (longtext)
+	- city (varchar(50))
+	- state_province (varchar(50))
+	- zip_postal_code (varchar(15))
+	- country_region (varchar(50))
+
+	Table: strings
+	- string_id (int)
+	- string_data (varchar(255))
+
+	Table: suppliers
+	- id (int)
+	- company (varchar(50))
+	- last_name (varchar(50))
+	- first_name (varchar(50))
+	- email_address (varchar(50))
+	- job_title (varchar(50))
+	- city (varchar(50))
+	- state_province (varchar(50))
+	- zip_postal_code (varchar(15))
+
+Relazioni:
+	employee_privileges.employee_id → employees.id
+	employee_privileges.privilege_id → privileges.id
+	inventory_transactions.transaction_type → inventory_transaction_types.id
+	inventory_transactions.customer_order_id → orders.id
+	inventory_transactions.product_id → products.id
+	inventory_transactions.purchase_order_id → purchase_orders.id
+	invoices.order_id → orders.id
+	order_details.order_id → orders.id
+	order_details.status_id → order_details_status.id
+	order_details.product_id → products.id
+	orders.customer_id → customers.id
+	orders.employee_id → employees.id
+	orders.status_id → orders_status.id
+	orders.tax_status_id → orders_tax_status.id
+	orders.shipper_id → shippers.id
+	purchase_order_details.inventory_id → inventory_transactions.id
+	purchase_order_details.product_id → products.id
+	purchase_order_details.purchase_order_id → purchase_orders.id
+	purchase_orders.created_by → employees.id
+	purchase_orders.status_id → purchase_order_status.id
+	purchase_orders.supplier_id → suppliers.id

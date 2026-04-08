@@ -1,0 +1,29 @@
+id,supplier_id,created_by,submitted_date,creation_date,status_id,shipping_fee,taxes,payment_amount,notes,approved_by,approved_date,submitted_by
+sdv-id-RUxGiq,sdv-id-RUGMIz,,2006-04-24 14:07:02,2006-04-26 18:33:52,sdv-id-QpEGba,0.0,0.0,0.0,Purchase generated based on Order #47,2.0,,9
+sdv-id-EpCRCG,sdv-id-cWxFtU,sdv-id-SuTAed,2006-04-14 10:04:59,2006-03-17 03:57:06,sdv-id-vGvJyl,0.0,0.0,0.0,,2.0,2006-01-29 08:24:21,6
+sdv-id-SedqqF,sdv-id-oUcFOR,,2006-02-02 01:00:02,2006-02-01 02:07:34,sdv-id-CmfuZM,0.0,0.0,0.0,Purchase generated based on Order #49,2.0,2006-02-18 04:26:13,9
+sdv-id-rzDran,sdv-id-cWxFtU,sdv-id-cWxFtU,2006-04-11 23:47:10,2006-03-04 21:44:05,sdv-id-vGvJyl,0.0,0.0,0.0,Purchase generated based on Order #38,2.0,,4
+sdv-id-ICdkcp,sdv-id-YkJlGv,sdv-id-EZALzg,2006-02-15 15:42:45,2006-02-25 09:02:59,sdv-id-vGvJyl,0.0,0.0,0.0,Purchase generated based on Order #48,2.0,,7
+sdv-id-OyUNCJ,sdv-id-RUGMIz,sdv-id-ktPBro,2006-04-24 13:47:08,2006-04-22 16:25:56,sdv-id-CmfuZM,0.0,0.0,0.0,Purchase generated based on Order #45,,2006-01-22 00:00:00,2
+sdv-id-ipKKdi,sdv-id-EZALzg,sdv-id-EZALzg,2006-03-28 19:00:11,2006-03-17 22:02:54,sdv-id-oywhxV,0.0,0.0,0.0,Purchase generated based on Order #56,2.0,2006-03-16 14:02:09,9
+sdv-id-kGVMHV,sdv-id-SuTAed,sdv-id-oUcFOR,2006-03-01 02:12:02,2006-02-03 16:55:01,sdv-id-oywhxV,0.0,0.0,0.0,Purchase generated based on Order #47,2.0,2006-01-22 00:00:00,7
+sdv-id-BiuPeB,sdv-id-oUcFOR,,2006-04-22 14:15:55,2006-04-26 18:33:52,sdv-id-oywhxV,0.0,0.0,0.0,Purchase generated based on Order #45,,2006-03-17 08:31:35,2
+sdv-id-ZeSZHS,sdv-id-SuTAed,sdv-id-ojKaoi,2006-01-25 18:19:51,2006-01-23 05:00:02,sdv-id-QpEGba,0.0,0.0,0.0,Purchase generated based on Order #40,2.0,2006-02-21 06:39:56,2
+sdv-id-Dvorey,sdv-id-ktPBro,sdv-id-cWxFtU,2006-04-23 12:05:14,2006-04-23 16:16:56,sdv-id-vGvJyl,0.0,0.0,0.0,,,2006-02-14 23:48:47,8
+sdv-id-dWyENC,sdv-id-oUcFOR,,2006-02-07 16:10:40,2006-01-22 17:52:06,sdv-id-CmfuZM,0.0,0.0,0.0,Purchase generated based on Order #33,2.0,2006-01-22 00:00:00,2
+sdv-id-RFUeGQ,sdv-id-RUGMIz,sdv-id-fiskfM,2006-04-26 17:12:38,2006-04-26 18:33:52,sdv-id-QpEGba,0.0,0.0,0.0,Purchase generated based on Order #30,,2006-04-03 23:59:59,4
+sdv-id-YOKvzp,sdv-id-cWxFtU,sdv-id-oUcFOR,2006-04-07 06:52:43,2006-02-23 05:30:20,sdv-id-oywhxV,0.0,0.0,0.0,,2.0,2006-01-22 00:00:00,9
+sdv-id-zxXgoS,sdv-id-RUGMIz,sdv-id-ktPBro,2006-02-07 18:28:03,2006-01-24 05:19:05,sdv-id-CmfuZM,0.0,0.0,0.0,Purchase generated based on Order #42,2.0,2006-01-22 00:00:00,4
+sdv-id-YHQTyo,sdv-id-SuTAed,sdv-id-fiskfM,2006-01-29 18:59:11,2006-02-19 16:57:18,sdv-id-CmfuZM,0.0,0.0,0.0,Purchase generated based on Order #42,2.0,2006-03-18 11:00:37,9
+sdv-id-bAYHop,sdv-id-oUcFOR,sdv-id-SuTAed,2006-03-14 11:41:49,2006-03-13 16:54:30,sdv-id-vGvJyl,0.0,0.0,0.0,Purchase generated based on Order #56,2.0,2006-01-27 03:38:46,6
+sdv-id-ZKAzce,sdv-id-MiKfHa,sdv-id-YkJlGv,2006-02-26 20:06:32,2006-01-23 21:54:24,sdv-id-vGvJyl,0.0,0.0,0.0,,2.0,2006-01-22 00:00:00,3
+sdv-id-CKIpFk,sdv-id-YkJlGv,sdv-id-ojKaoi,2006-02-18 06:50:44,2006-01-23 23:33:00,sdv-id-oywhxV,0.0,0.0,0.0,Purchase generated based on Order #46,2.0,2006-01-22 00:00:00,4
+sdv-id-WtYNpV,sdv-id-EZALzg,,2006-04-03 06:12:31,2006-04-16 04:16:02,sdv-id-vGvJyl,0.0,0.0,0.0,Purchase generated based on Order #46,2.0,2006-03-25 23:50:44,9
+sdv-id-rxUmUO,sdv-id-YkJlGv,sdv-id-SuTAed,2006-04-23 10:45:35,2006-04-26 18:33:52,sdv-id-QpEGba,0.0,0.0,0.0,Purchase generated based on Order #48,2.0,2006-04-03 13:20:39,2
+sdv-id-dWzEoz,sdv-id-fiskfM,sdv-id-ojKaoi,2006-04-11 12:26:44,2006-04-26 16:55:16,sdv-id-QpEGba,0.0,0.0,0.0,Purchase generated based on Order #36,,2006-04-02 19:51:44,9
+sdv-id-eqhdGc,sdv-id-ktPBro,sdv-id-oUcFOR,2006-03-08 21:46:41,2006-03-07 01:41:16,sdv-id-CmfuZM,0.0,0.0,0.0,,2.0,2006-03-26 08:47:53,6
+sdv-id-stHpAW,sdv-id-fiskfM,sdv-id-SuTAed,2006-04-18 09:35:02,2006-02-26 09:12:31,sdv-id-vGvJyl,0.0,0.0,0.0,,2.0,2006-01-22 00:00:00,7
+sdv-id-jVHKBj,sdv-id-oUcFOR,,2006-02-01 09:42:41,2006-01-22 20:33:56,sdv-id-vGvJyl,0.0,0.0,0.0,Purchase generated based on Order #40,2.0,,9
+sdv-id-BUcqnr,sdv-id-cWxFtU,sdv-id-EZALzg,2006-04-12 15:40:18,2006-04-21 09:28:31,sdv-id-oywhxV,0.0,0.0,0.0,Purchase generated based on Order #56,2.0,2006-04-01 17:17:18,9
+sdv-id-heWvlf,sdv-id-fiskfM,sdv-id-MiKfHa,2006-04-10 07:09:49,2006-04-01 09:14:56,sdv-id-QpEGba,0.0,0.0,0.0,Purchase generated based on Order #47,2.0,2006-01-25 05:05:24,6
+sdv-id-PmpSky,sdv-id-ojKaoi,sdv-id-cWxFtU,2006-03-24 05:43:08,2006-02-21 23:17:35,sdv-id-vGvJyl,0.0,0.0,0.0,,2.0,2006-01-22 00:00:00,3

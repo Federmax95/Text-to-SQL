@@ -1,0 +1,4 @@
+id,company,last_name,first_name,email_address,address,city,state_province,zip_postal_code,country_region
+sdv-id-nZfBGY,Shipping Company C,Stokes,Tony,jburgess@example.org,123 Any Street,Parkershire,Florida,92681,USA
+sdv-id-uFfxbl,Shipping Company A,Smith,Alison,lpeterson@example.com,123 Any Street,Tonyaville,Colorado,74725,USA
+sdv-id-LmVOKf,Shipping Company B,Whitehead,Kelly,leonardlester@example.com,123 Any Street,Jennifershire,Massachusetts,46097,USA

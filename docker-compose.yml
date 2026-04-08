@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: northwind-mysql
+    restart: always
+    environment:
+      # Password del DB passata tramite file o defaults a "root"
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root}
+      MYSQL_DATABASE: northwind
+    ports:
+      - "3307:3306"
+    volumes:
+      # Tutti gli script .sql in init_db verranno eseguiti la PRIMA VOLTA che viene creato il DB
+      - ./init_db:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: northwind-ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      # Il volume persisterà i modelli scaricati
+      - ollama_data:/root/.ollama
+  # Container ausiliario "usa-e-getta" per scaricare automaticamente il modello LLM ai primi avvii
+  ollama-pull-model:
+    image: ollama/ollama:latest
+    container_name: northwind-ollama-pull
+    restart: "no"
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: /bin/sh
+    command: -c "sleep 10 && ollama pull qwen2.5-coder && echo 'Modello qwen scaricato con successo!'"
+
+  app:
+    build: .
+    container_name: northwind-app
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+       # La nostra app leggerà questo ambiente al posto di fermarsi su getpass()
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-root}
+      - DB_NAME=northwind
+      - OLLAMA_URL=http://ollama:11434/api/generate
+    depends_on:
+      db:
+        # Aspetta test mysqladmin
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+volumes:
+  mysql_data:
+  ollama_data:
