@@ -424,6 +424,13 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         sim_context = retriever.format_examples(similars)
     else:
         sim_context = ""
+    if(max_sim>0.90):
+        res = execute_mysql(similars[0]['query'], adapter)
+        if res["success"]:
+            print(f"\n🖥️  QUERY ESEGUITA:\n   {similars[0]['query']}")
+            res["sql"] = similars[0]['query']
+            res["retrieved"] = True
+            return res
 
     # ── PHASE 2: Chain-of-Thought Reasoning ──
     print("🧠 Ragionamento in corso...")
@@ -499,9 +506,10 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
 
         # ── Execution ──
         res = execute_mysql(sql, adapter)
-        if res["success"]:
+        if res.get("success"): # Usa .get() per sicurezza
             print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
             res["sql"] = sql
+            res["retrieved"] = False
             return res
         else:
             err = res["error"]
@@ -568,9 +576,10 @@ def interactive_loop():
         if res["success"]:
             print("\n📊 RISULTATI MySQL:")
             print(format_results(res))
-            if ask_yes_no("\n✅ La query generata è corretta e vuoi salvarla nel pool RAG? [s/n]: "):
-                retriever.add_example(q, res["sql"])
-                print("   ✅ Query salvata nel pool.")
+            if res["retrieved"] == False:
+                if ask_yes_no("\n✅ La query generata è corretta e vuoi salvarla nel pool RAG? [s/n]: "):
+                    retriever.add_example(q, res["sql"])
+                    print("   ✅ Query salvata nel pool.")
         else:
             print("\n❌ ERRORE:", res.get("error", "Sconosciuto"))
 

@@ -70,14 +70,19 @@
                 });
                 const res = await response.json();
 
-                if (res.success) {
+                if (res.success){
                     currentSql = res.sql;
                     sqlPrev.textContent = "SQL: " + res.sql;
                     sqlPrev.classList.remove('d-none');
                     feedbackArea.classList.remove('d-none');
 
-                    document.getElementById('btn-correct').onclick = () => saveFeedback(true);
-                    document.getElementById('btn-wrong').onclick = () => saveFeedback(false);
+                   if (!res.retrieved) {
+                        feedbackArea.classList.remove('d-none');
+                        document.getElementById('btn-correct').onclick = () => saveFeedback(true);
+                        document.getElementById('btn-wrong').onclick = () => saveFeedback(false);
+                    } else {
+                        feedbackArea.classList.add('d-none');
+                    }
 
                     if (res.data.length > 0) {
                         let header = "<thead><tr>" + res.columns.map(c => `<th>${c}</th>`).join('') + "</tr></thead>";

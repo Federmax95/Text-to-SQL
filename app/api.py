@@ -114,7 +114,8 @@ async def ask_question(request: QueryRequest):
             "success": True,
             "sql": res.get("sql", ""),
             "columns": res.get("columns", []),
-            "data": res.get("data", [])
+            "data": res.get("data", []),
+            "retrieved": res.get("retrieved", False)
         }
     else:
         return {
