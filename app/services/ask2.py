@@ -1,29 +1,29 @@
 """
 🔎 Northwind RAG-SQL (Interactive Mode) - SOLO SELECT
 =======================================
-Ti permette di fare domande in linguaggio naturale sul DB Northwind MySQL.
+Ti permette di fare domande in linguaggio naturale sul DB Northwind SQLite.
 Usa l'intelligenza di RAG per estrarre logiche simili dal vecchio Vector Pool 
 Spider e applicarle magicamente al nuovo Schema Northwind con sample data.
 Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
-import sqlglot
-import json
-import requests
-import re
-import os
-import sys
+
 import time
 from sqlglot import exp
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.retriever import SPSRetriever
+from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
+import re
+import requests
+import json
+import sqlglot
+import os
+import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
-
-from app.services.schema_adapter import NorthwindSchemaAdapter
-from app.services.retriever import SPSRetriever
-from app.core.config import LLM_MODEL, OLLAMA_URL, TOP_K
 
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
@@ -93,7 +93,7 @@ def build_cot_prompt(question: str, schema_text: str) -> str:
 
 
 def build_columns_prompt(question: str, schema_text: str, similar: str) -> str:
-    return f"""You are a MySQL schema analyzer.
+    return f"""You are a SQLite schema analyzer.
             {schema_text}
 
             ### Similar conceptual SQL pattern (for inspiration only):
@@ -113,14 +113,14 @@ def build_columns_prompt(question: str, schema_text: str, similar: str) -> str:
 
 
 def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str) -> str:
-    return f"""You are an elite MySQL query generator.
+    return f"""You are an elite SQLite query generator.
             {schema_text}
 
             ### Similar Concept Reference:
             {similar}
 
             ### ━━ CRITICAL RULES ━━
-            - Generate ONLY valid MySQL syntax. No explanations. No markdown.
+            - Generate ONLY valid SQLite syntax. No explanations. No markdown.
             - ONLY use tables and columns listed in "Allowed Columns" below.
             - Do NOT use `SELECT *` — list columns explicitly.
             - NEVER use placeholders like <value>, <id>. Derive all values from the schema.
@@ -187,12 +187,12 @@ def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str
             ### User Question:
             {question}
 
-            ### MySQL Query:
+            ### SQLite Query:
             """
 
 
 def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str, question: str) -> str:
-    return f"""You are a MySQL expert fixing a query.
+    return f"""You are a SQLite expert fixing a query.
 
             ### Schema:
             {schema_text}
@@ -321,7 +321,7 @@ def enforce_select_columns(sql: str, question: str) -> str:
 
 # Controlla che le colonne che ha selezionato LLM esistano effettivamente
 def validate_columns(columns_raw: str, valid_tables: set, valid_columns: dict) -> list[str]:
-    """Scarta colonne allucinate non presenti in MySQL. Estrae pattern table.column esatti."""
+    """Scarta colonne allucinate non presenti in SQLite. Estrae pattern table.column esatti."""
     valid_cols = []
     lines = columns_raw.strip().splitlines()
     if DEBUG:
@@ -352,7 +352,7 @@ def validate_columns(columns_raw: str, valid_tables: set, valid_columns: dict) -
 
 def validate_sql_syntax(sql: str) -> tuple[bool, str]:
     try:
-        ast = sqlglot.parse_one(sql)
+        ast = sqlglot.parse_one(sql, read="sqlite")
         if not isinstance(ast, exp.Select):
             return False, f"Bloccato: Rilevata operazione non consentita ({ast.key.upper()})."
         return True, "Query valida e sicura."
@@ -363,15 +363,18 @@ def validate_sql_syntax(sql: str) -> tuple[bool, str]:
 
 
 # Esegue la query generata
-def execute_mysql(query: str, adapter: NorthwindSchemaAdapter) -> dict:
+def execute_query(query: str, adapter: NorthwindSchemaAdapter) -> dict:
     try:
         with adapter._get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query)
-                cols = [desc[0]
-                        for desc in cursor.description] if cursor.description else []
-                data = cursor.fetchall()
-                return {"success": True, "columns": cols, "data": data}
+            cursor = conn.cursor()
+            cursor.execute(query)
+
+            cols = [desc[0]
+                    for desc in cursor.description] if cursor.description else []
+            data = cursor.fetchall()
+
+            return {"success": True, "columns": cols, "data": data}
+
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -403,37 +406,12 @@ def ask_yes_no(prompt: str) -> bool:
         print("Rispondi 'si' o 'no'.")
 
 
-def is_table_listing_question(question: str) -> bool:
-    """Riconosce richieste di metadati tipo elenco tabelle."""
-    q = question.lower().strip()
-    patterns = [
-        r"\bstampa\s+tutte\s+le\s+tabelle\b",
-        r"\belenca\s+tutte\s+le\s+tabelle\b",
-        r"\blista\s+(?:delle\s+)?tabelle\b",
-        r"\bquali\s+sono\s+le\s+tabelle\b",
-        r"\bshow\s+tables\b",
-        r"\blist\s+all\s+tables\b",
-    ]
-    return any(re.search(pattern, q) for pattern in patterns)
-
-
 # =========================
 # CORE APP
 # =========================
 
 def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
-
-    # Richiesta metadati: elenco tabelle del DB.
-    if is_table_listing_question(q):
-        sql = "SHOW TABLES"
-        res = execute_mysql(sql, adapter)
-        if res.get("success"):
-            print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
-            res["sql"] = sql
-            res["retrieved"] = False
-            return res
-        return {"success": False, "error": res.get("error", "Errore durante SHOW TABLES.")}
 
     # ── PHASE 1: Retrieval RAG  ──
     print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
@@ -450,7 +428,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
     else:
         sim_context = ""
     if (max_sim > 0.90):
-        res = execute_mysql(similars[0]['query'], adapter)
+        res = execute_query(similars[0]['query'], adapter)
         if res["success"]:
             print(f"\n🖥️  QUERY ESEGUITA:\n   {similars[0]['query']}")
             res["sql"] = similars[0]['query']
@@ -531,7 +509,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
             continue
 
         # ── Execution ──
-        res = execute_mysql(sql, adapter)
+        res = execute_query(sql, adapter)
         if res.get("success"):  # Usa .get() per sicurezza
             print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
             res["sql"] = sql
@@ -550,7 +528,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
                 sql = clean_sql(call_ollama(p_fix))
                 sql = enforce_select_columns(sql, q)
 
-    print("\n❌ Impossibile generare una query MySQL valida (Tentativi esauriti).")
+    print("\n❌ Impossibile generare una query SQLite valida (Tentativi esauriti).")
     return {"success": False, "error": "Tentativi esauriti.", "sql": sql}
 
 
@@ -561,7 +539,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
 def interactive_loop():
     print("=" * 70)
     print("🚀  NORTHWIND Text-to-SQL 🚀".center(70))
-    print("   Database:   MySQL (schema 'northwind')")
+    print("   Database:   SQLite (file academic.sqlite)")
     print(f"   Modello:    {LLM_MODEL}")
     print(f"   RAG Vector: Top {TOP_K} Cross-Domain Pattern da memoria")
     print("=" * 70)
@@ -569,14 +547,22 @@ def interactive_loop():
     print("\n[inizializzazione in corso... attendere]")
     try:
         retriever = SPSRetriever()
-        adapter = NorthwindSchemaAdapter()
+        sqlite_path = os.environ.get(
+            "SQLITE_PATH",
+            os.path.join(PROJECT_DIR, "academic", "academic.sqlite"),
+        )
+        if not os.path.exists(sqlite_path):
+            print(f"❌ File SQLite non trovato: {sqlite_path}")
+            return
+        adapter = NorthwindSchemaAdapter(
+            sqlite_path=sqlite_path
+        )
         schema_data = adapter.extract_schema()
         schema_text = adapter.schema_to_text(schema_data)
         valid_tables = schema_data["valid_tables"]
         valid_columns = schema_data["valid_columns"]
         if not valid_tables:
-            print(
-                "❌ Impossibile leggere il database Northwind. Le credenziali sono corrette?")
+            print("❌ Impossibile leggere il database Northwind SQLite.")
             return
     except Exception as e:
         print(f"❌ Errore critico di boot: {e}")
@@ -601,13 +587,11 @@ def interactive_loop():
         res = process_question(q, retriever, adapter,
                                schema_text, valid_tables, valid_columns)
         if res["success"]:
-            print("\n📊 RISULTATI MySQL:")
+            print("\n📊 RISULTATI SQLite:")
             print(format_results(res))
             if res["retrieved"] == False:
-                if ask_yes_no("\n✅ La query generata è corretta? [s/n]: "):
-                    retriever.add_example(q, res["sql"], is_correct=True)
-                else:
-                    retriever.add_example(q, res["sql"], is_correct=False)
+                retriever.add_example(q, res["sql"], is_correct=True)
+                print("   📝 Query salvata automaticamente nel pool con stato: CORRETTA.")
         else:
             print("\n❌ ERRORE:", res.get("error", "Sconosciuto"))
             failed_sql = res.get("sql")

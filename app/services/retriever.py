@@ -10,9 +10,8 @@ import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-
-from app.core.config import (POOL_EMBEDDINGS_PATH, POOL_DATA_PATH,
-                             EMBEDDING_MODEL, TOP_K)
+from app.core.config import (
+    POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL, TOP_K)
 
 
 class SPSRetriever:
@@ -20,7 +19,7 @@ class SPSRetriever:
 
     def __init__(self):
         """Carica il modello di embedding, gli embeddings e i metadati del pool."""
-        print(f"  🔍 Caricamento retriever SPS-SQL...")
+        print(f"  🔍 Caricamento retriever Text-to-SQL...")
 
         # Carica modello di embedding
         self.model = SentenceTransformer(EMBEDDING_MODEL)
@@ -55,24 +54,31 @@ class SPSRetriever:
         if len(self.pool_data) == 0 or self.embeddings.size == 0:
             return []
 
-        # Encode la domanda
-        query_emb = self.model.encode(
-            [question],
-            normalize_embeddings=True,
-        )
+        # Usa solo esempi validi/corretti per evitare di contaminare il retrieval.
+        valid_indices = [
+            i for i, item in enumerate(self.pool_data)
+            if item.get("is_correct", True)
+        ]
+        if not valid_indices:
+            return []
 
-        # Calcola similarità coseno con tutto il pool
-        similarities = cosine_similarity(query_emb, self.embeddings)[0]
+        # Encode la domanda
+        query_emb = self.model.encode([question], normalize_embeddings=True)
+
+        # Calcola similarità coseno sul sottoinsieme di esempi validi
+        filtered_embeddings = self.embeddings[valid_indices]
+        similarities = cosine_similarity(query_emb, filtered_embeddings)[0]
 
         # Ordina per similarità decrescente e prendi i top-K
         top_indices = np.argsort(similarities)[::-1][:top_k]
 
         results = []
         for idx in top_indices:
+            pool_idx = valid_indices[idx]
             results.append({
-                "question": self.pool_data[idx]["question"],
-                "query": self.pool_data[idx]["query"],
-                "db_id": self.pool_data[idx]["db_id"],
+                "question": self.pool_data[pool_idx]["question"],
+                "query": self.pool_data[pool_idx]["query"],
+                "db_id": self.pool_data[pool_idx].get("db_id", "northwind"),
                 "similarity": float(similarities[idx]),
             })
 
@@ -104,27 +110,43 @@ class SPSRetriever:
     def _normalize_text(self, text: str) -> str:
         return " ".join(text.strip().lower().split())
 
-    def example_exists(self, question: str, query: str) -> bool:
+    def example_exists(self, question: str, query: str, is_correct: bool = True) -> bool:
         normalized_question = self._normalize_text(question)
         normalized_query = self._normalize_text(query)
         for item in self.pool_data:
-            if self._normalize_text(item.get("query", "")) == normalized_query:
-                return True
-            if self._normalize_text(item.get("question", "")) == normalized_question:
+            same_question = self._normalize_text(
+                item.get("question", "")) == normalized_question
+            same_query = self._normalize_text(
+                item.get("query", "")) == normalized_query
+            same_quality = bool(item.get("is_correct", True)
+                                ) == bool(is_correct)
+            if same_question and same_query and same_quality:
                 return True
         return False
 
-    def add_example(self, question: str, query: str, db_id: str = "northwind") -> bool:
-        """Aggiunge un esempio umano verificato al pool e aggiorna embedding + file sul disco."""
-        if self.example_exists(question, query):
+    def add_example(
+        self,
+        question: str,
+        query: str,
+        db_id: str = "northwind",
+        is_correct: bool = True,
+        error: str | None = None,
+    ) -> bool:
+        """Aggiunge un esempio al pool (corretto o errato) e aggiorna embedding + file sul disco."""
+        if self.example_exists(question, query, is_correct=is_correct):
             print(f"  ⚠️  Esempio già presente nel pool: '{question}'")
             return False
 
         new_emb = self.model.encode([question], normalize_embeddings=True)
 
         # Aggiorna pool in memoria
-        self.pool_data.append(
-            {"question": question, "query": query, "db_id": db_id})
+        self.pool_data.append({
+            "question": question,
+            "query": query,
+            "db_id": db_id,
+            "is_correct": bool(is_correct),
+            "error": error if error else None,
+        })
         self.embeddings = np.vstack([self.embeddings, new_emb])
 
         # Assicura che la cartella del pool esista
@@ -137,5 +159,8 @@ class SPSRetriever:
 
         np.save(POOL_EMBEDDINGS_PATH, self.embeddings)
 
-        print(f"  ✅ Esempio aggiunto al pool: '{question}' (db_id={db_id})")
+        quality_label = "corretto" if is_correct else "errato"
+        print(
+            f"  ✅ Esempio aggiunto al pool ({quality_label}): '{question}' (db_id={db_id})"
+        )
         return True

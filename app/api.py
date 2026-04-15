@@ -6,6 +6,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import uvicorn
+import sqlglot
+from sqlglot import exp
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
@@ -27,7 +29,17 @@ class SaveRequest(BaseModel):
     correct: bool
 
 
+class ExecuteSqlRequest(BaseModel):
+    sql: str
+
+
 app_state = {}
+
+
+def _json_safe_value(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 @asynccontextmanager
@@ -77,6 +89,15 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html"
+    )
+
+
+@app.get("/pool")
+async def pool_page(request: Request):
+    """Restituisce la pagina web con gli esempi del pool."""
+    return templates.TemplateResponse(
+        request=request,
+        name="pool.html"
     )
 
 
@@ -131,18 +152,81 @@ async def save_query(request: SaveRequest):
         raise HTTPException(
             status_code=503, detail="Server non inizializzato correttamente.")
 
-    if not request.correct:
-        return {"success": True, "saved": False, "message": "Feedback ricevuto: query non corretta."}
-
     try:
         saved = app_state["retriever"].add_example(
-            request.question, request.sql)
+            request.question,
+            request.sql,
+            is_correct=bool(request.correct),
+            error=None if request.correct else "Segnata come non corretta dall'utente",
+        )
         if not saved:
             return {"success": True, "saved": False, "message": "Query già presente nel pool, non è stata duplicata."}
         return {"success": True, "saved": True, "message": "Query salvata nel pool."}
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Errore salvataggio query: {e}")
+
+
+@app.get("/api/pool")
+async def get_pool_examples():
+    """Restituisce tutti gli esempi presenti nel pool con stato correttezza."""
+    if not app_state.get("ready"):
+        raise HTTPException(status_code=503, detail="Server non inizializzato correttamente.")
+
+    pool_data = app_state["retriever"].pool_data
+    rows = []
+    for idx, item in enumerate(pool_data):
+        rows.append({
+            "id": idx,
+            "question": item.get("question", ""),
+            "query": item.get("query", ""),
+            "db_id": item.get("db_id", "northwind"),
+            "is_correct": bool(item.get("is_correct", True)),
+            "error": item.get("error"),
+        })
+    return {"success": True, "items": rows}
+
+
+@app.post("/api/pool/execute")
+async def execute_pool_query(request: ExecuteSqlRequest):
+    """Esegue una query del pool solo se è una SELECT valida."""
+    if not app_state.get("ready"):
+        raise HTTPException(status_code=503, detail="Server non inizializzato correttamente.")
+
+    sql = request.sql.strip()
+    if not sql:
+        raise HTTPException(status_code=400, detail="La query SQL è vuota.")
+
+    try:
+        ast = sqlglot.parse_one(sql)
+        if not isinstance(ast, exp.Select):
+            raise HTTPException(
+                status_code=400,
+                detail="È consentita solo l'esecuzione di query SELECT.",
+            )
+    except sqlglot.errors.ParseError as e:
+        raise HTTPException(status_code=400, detail=f"Errore sintassi SQL: {e}")
+
+    try:
+        with app_state["adapter"]._get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+                columns = [d[0] for d in cursor.description] if cursor.description else []
+                data = cursor.fetchall()
+
+        safe_data = [
+            [_json_safe_value(cell) for cell in row]
+            for row in data
+        ]
+
+        return {
+            "success": True,
+            "columns": columns,
+            "data": safe_data,
+            "row_count": len(safe_data),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run("app.api:app", host="0.0.0.0", port=8000, reload=False)
