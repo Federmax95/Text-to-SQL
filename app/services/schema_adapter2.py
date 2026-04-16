@@ -32,7 +32,8 @@ class NorthwindSchemaAdapter:
         if self.sqlite_path:
             return sqlite3.connect(self.sqlite_path)
         if mysql is None:
-            raise ImportError("mysql-connector-python non installato. Usa sqlite_path o installa il connector MySQL.")
+            raise ImportError(
+                "mysql-connector-python non installato. Usa sqlite_path o installa il connector MySQL.")
         return mysql.connector.connect(**self.config)
 
     # =========================
@@ -65,12 +66,14 @@ class NorthwindSchemaAdapter:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
 
-                cursor.execute("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
+                cursor.execute(
+                    "SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
                 tables = [row[0] for row in cursor.fetchall()]
 
                 for table in tables:
                     schema["valid_tables"].add(table.lower())
-                    schema["tables"][table] = {"columns": [], "sample_data": []}
+                    schema["tables"][table] = {
+                        "columns": [], "sample_data": []}
 
                     cursor.execute(f"DESCRIBE `{table}`")
                     columns_info = cursor.fetchall()
@@ -82,7 +85,8 @@ class NorthwindSchemaAdapter:
                         schema["tables"][table]["columns"].append(
                             f"{col_name} [{col_type}]"
                         )
-                        schema["valid_columns"][f"{table}.{col_name}".lower()] = True
+                        schema["valid_columns"][f"{table}.{col_name}".lower(
+                        )] = True
 
                     try:
                         cursor.execute(f"SELECT * FROM `{table}` LIMIT 2")
@@ -135,7 +139,8 @@ class NorthwindSchemaAdapter:
 
                 for table in tables:
                     schema["valid_tables"].add(table.lower())
-                    schema["tables"][table] = {"columns": [], "sample_data": []}
+                    schema["tables"][table] = {
+                        "columns": [], "sample_data": []}
 
                     cursor.execute(f"PRAGMA table_info('{table}')")
                     columns_info = cursor.fetchall()
@@ -147,7 +152,8 @@ class NorthwindSchemaAdapter:
                         schema["tables"][table]["columns"].append(
                             f"{col_name} [{col_type}]"
                         )
-                        schema["valid_columns"][f"{table}.{col_name}".lower()] = True
+                        schema["valid_columns"][f"{table}.{col_name}".lower(
+                        )] = True
 
                     try:
                         cursor.execute(f"SELECT * FROM '{table}' LIMIT 2")
@@ -227,7 +233,8 @@ class NorthwindSchemaAdapter:
                 if match:
                     col_name, col_type = match.groups()
                     columns.append(f"{col_name} [{col_type}]")
-                    schema["valid_columns"][f"{table_name}.{col_name}".lower()] = True
+                    schema["valid_columns"][f"{table_name}.{col_name}".lower(
+                    )] = True
 
             schema["tables"][table_name] = {
                 "columns": columns,

@@ -7,6 +7,7 @@ Spider e applicarle magicamente al nuovo Schema Northwind con sample data.
 Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
+
 import sqlglot
 import json
 import requests
@@ -21,16 +22,15 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
-from app.services.schema_adapter import NorthwindSchemaAdapter
-from app.services.retriever import SPSRetriever
 from app.core.config import LLM_MODEL, OLLAMA_URL, TOP_K
-
+from app.services.retriever import SPSRetriever
+from app.services.schema_adapter import NorthwindSchemaAdapter
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
 
 SIMILARITY_THRESHOLD = 0.50  # Similarità con la quale recupra gli esempi dal database
 
-
+stato = {}
 # =========================
 # OLLAMA & UTILS
 # =========================
@@ -421,8 +421,15 @@ def is_table_listing_question(question: str) -> bool:
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict) -> dict:
+        
+
+def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
+    def notify_progress(step: str, message: str = ""):
+        print(step, message)
+        if progress_callback:
+            print(progress_callback)
+            progress_callback(step, message)
 
     # Richiesta metadati: elenco tabelle del DB.
     if is_table_listing_question(q):
@@ -436,6 +443,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         return {"success": False, "error": res.get("error", "Errore durante SHOW TABLES.")}
 
     # ── PHASE 1: Retrieval RAG  ──
+    notify_progress("step-1", "Ricerca pattern nel Vector DB...")
     print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
     k = 5
     similars = retriever.retrieve(q, top_k=k)
@@ -449,6 +457,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         sim_context = retriever.format_examples(similars)
     else:
         sim_context = ""
+    #Se la similarità è > 90 viene eseguita direttamente
     if (max_sim > 0.90):
         res = execute_mysql(similars[0]['query'], adapter)
         if res["success"]:
@@ -458,6 +467,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
             return res
 
     # ── PHASE 2: Chain-of-Thought Reasoning ──
+    notify_progress("step-2", "Ragionamento chain-of-thought...")
     print("🧠 Ragionamento in corso...")
     try:
         cot_prompt = build_cot_prompt(q, schema_text)
@@ -469,6 +479,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         return {"success": False, "error": str(ce)}
 
     # ── PHASE 3: Column Selection ──
+    notify_progress("step-3", "Identificazione colonne necessarie...")
     print("⏳ Identificazione colonne strettamente necessarie...")
     try:
         p_cols = build_columns_prompt(q, schema_text, sim_context)
@@ -481,9 +492,9 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         return {"success": False, "error": "Nessuna colonna legittima identificata per la domanda."}
 
     # ── PHASE 4: SQL Generation ──
+    notify_progress("step-4", "Generazione query MySQL...")
     print("⏳ Generazione Query Target...")
-    p_sql = build_sql_prompt("\n".join(valid_cols), q,
-                             schema_text, sim_context)
+    p_sql = build_sql_prompt("\n".join(valid_cols), q,schema_text, sim_context)
     sql = clean_sql(call_ollama(p_sql))
     sql = enforce_select_columns(sql, q)
 
@@ -496,6 +507,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
             print(f"   🔄 AutoFix #{attempt - 1}...")
+            notify_progress("step-4", f"Tentativo di fix #{attempt - 1}...")
 
         if DEBUG:
             print("SQL: ", sql)

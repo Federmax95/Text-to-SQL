@@ -7,6 +7,123 @@
     <style>
         .loading { display: none; }
         #results-table { margin-top: 20px; }
+
+        /* Animazione loader */
+        .loader-container {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .spinner-pulse {
+            display: inline-block;
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+
+        .spinner-pulse div {
+            position: absolute;
+            border: 4px solid #0d6efd;
+            opacity: 1;
+            border-radius: 50%;
+            animation: spinner-pulse 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        }
+
+        .spinner-pulse div:nth-child(2) {
+            animation-delay: -0.5s;
+        }
+
+        .spinner-pulse div:nth-child(3) {
+            animation-delay: -1s;
+        }
+
+        @keyframes spinner-pulse {
+            0% {
+                top: 36px;
+                left: 36px;
+                width: 0;
+                height: 0;
+                opacity: 1;
+            }
+            100% {
+                top: 0px;
+                left: 0px;
+                width: 72px;
+                height: 72px;
+                opacity: 0;
+            }
+        }
+
+        /* Messaggi di progresso */
+        .progress-messages {
+            margin-top: 30px;
+            text-align: left;
+        }
+
+        .progress-item {
+            margin: 15px 0;
+            padding: 12px 15px;
+            border-left: 3px solid #0d6efd;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            opacity: 0;
+            animation: fadeInSlide 0.6s ease-out forwards;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .progress-item.pending {
+            border-left-color: #ffc107;
+            background-color: #fff8e1;
+        }
+
+        .progress-item.completed {
+            border-left-color: #28a745;
+            background-color: #e8f5e9;
+        }
+
+        .progress-item.active {
+            border-left-color: #0d6efd;
+            background-color: #e7f1ff;
+            font-weight: 500;
+        }
+
+        .progress-item:nth-child(1) { animation-delay: 0.1s; }
+        .progress-item:nth-child(2) { animation-delay: 0.5s; }
+        .progress-item:nth-child(3) { animation-delay: 0.9s; }
+        .progress-item:nth-child(4) { animation-delay: 1.3s; }
+
+        @keyframes fadeInSlide {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .progress-icon {
+            min-width: 24px;
+            font-size: 18px;
+            animation: spin 2s linear infinite;
+        }
+
+        .progress-icon.completed {
+            animation: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-text {
+            flex: 1;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -23,8 +140,33 @@
             </div>
 
             <div id="loader" class="text-center loading">
-                <div class="spinner-border text-primary" role="status"></div>
-                <p>Elaborazione in corso...</p>
+                <div class="loader-container">
+                    <div class="spinner-pulse">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <h5 class="mt-4 text-primary">Elaborazione in corso...</h5>
+                    
+                    <div class="progress-messages">
+                        <div class="progress-item active" id="step-1">
+                            <span class="progress-icon">⏳</span>
+                            <span class="progress-text">Ricerca pattern analoghi nel Vector DB...</span>
+                        </div>
+                        <div class="progress-item pending" id="step-2">
+                            <span class="progress-icon">🧠</span>
+                            <span class="progress-text">Ragionamento chain-of-thought...</span>
+                        </div>
+                        <div class="progress-item pending" id="step-3">
+                            <span class="progress-icon">🔍</span>
+                            <span class="progress-text">Identificazione colonne necessarie...</span>
+                        </div>
+                        <div class="progress-item pending" id="step-4">
+                            <span class="progress-icon">✨</span>
+                            <span class="progress-text">Generazione query MySQL...</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div id="response-area">
@@ -47,6 +189,107 @@
     <script>
         let currentQuestion = "";
         let currentSql = "";
+        let eventSource = null;
+
+        function updateProgressStep(step) {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            const icons = ['⏳', '🧠', '🔍', '✨'];
+            const stepIndex = steps.indexOf(step);
+            
+            if (stepIndex === -1) return;
+
+            // Marca tutti i step precedenti come completati
+            for (let i = 0; i < stepIndex; i++) {
+                const element = document.getElementById(steps[i]);
+                if (element) {
+                    element.classList.remove('active', 'pending');
+                    element.classList.add('completed');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = '✓';
+                        icon.classList.add('completed');
+                    }
+                }
+            }
+            
+            // Marca lo step corrente come attivo
+            const currentElement = document.getElementById(step);
+            if (currentElement) {
+                currentElement.classList.remove('pending');
+                currentElement.classList.add('active');
+            }
+            
+            // Marca i step successivi come pending
+            for (let i = stepIndex + 1; i < steps.length; i++) {
+                const element = document.getElementById(steps[i]);
+                if (element) {
+                    element.classList.remove('active', 'completed');
+                    element.classList.add('pending');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = icons[i];
+                        icon.classList.remove('completed');
+                    }
+                }
+            }
+        }
+
+        function completeAllSteps() {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            steps.forEach((stepId) => {
+                const element = document.getElementById(stepId);
+                if (element) {
+                    element.classList.remove('active', 'pending');
+                    element.classList.add('completed');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = '✓';
+                        icon.classList.add('completed');
+                    }
+                }
+            });
+        }
+
+        function resetProgressSteps() {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            const icons = ['⏳', '🧠', '🔍', '✨'];
+            
+            steps.forEach((stepId, index) => {
+                const element = document.getElementById(stepId);
+                if (element) {
+                    element.className = 'progress-item' + (index === 0 ? ' active' : ' pending');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = icons[index];
+                        icon.classList.remove('completed');
+                    }
+                }
+            });
+        }
+
+        function startProgressListener(sessionId) {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(`/api/progress?session_id=${encodeURIComponent(sessionId)}`);
+            eventSource.onmessage = function(event) {
+                try {
+                    const state = JSON.parse(event.data);
+                    if (state.step) {
+                        updateProgressStep(state.step);
+                    }
+                } catch (e) {
+                    // Ignora errori di parsing
+                }
+            };
+            eventSource.onerror = function() {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+            };
+        }
 
         async function sendQuery() {
             currentQuestion = document.getElementById('question').value;
@@ -64,14 +307,33 @@
             feedbackArea.classList.add('d-none');
             feedbackMessage.textContent = "";
             loader.style.display = "block";
+            
+            // Reset progress steps
+            resetProgressSteps();
+
+            const sessionId = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            
+            // Avvia l'ascolto degli aggiornamenti di progresso dal server
+            startProgressListener(sessionId);
 
             try {
                 const response = await fetch('/api/ask', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({question: currentQuestion})
+                    body: JSON.stringify({question: currentQuestion, session_id: sessionId})
                 });
                 const res = await response.json();
+
+                // Completa tutti gli step quando la risposta arriva
+                completeAllSteps();
+                
+                // Chiudi la connessione SSE
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
 
                 if (res.success){
                     currentSql = res.sql;
@@ -101,8 +363,15 @@
                 }
             } catch (e) {
                 alert("Errore di connessione al server.");
+                completeAllSteps();
             } finally {
-                loader.style.display = "none";
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                setTimeout(() => {
+                    loader.style.display = "none";
+                }, 500);
             }
         }
 
