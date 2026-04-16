@@ -10,8 +10,9 @@ Supporta:
 import sqlite3
 import json
 import re
+import os
 from typing import Dict
-from app.core.config import DB_CONFIG
+# from app.core.config2 import DB_CONFIG
 
 try:
     import mysql.connector
@@ -21,20 +22,28 @@ except ImportError:
 
 class NorthwindSchemaAdapter:
     def __init__(self, schema_file: str = None, sqlite_path: str = None):
-        self.config = DB_CONFIG
+        # self.config = DB_CONFIG
         self.schema_file = schema_file
         self.sqlite_path = sqlite_path
 
-    # =========================
-    # 🔹 CONNECTION
-    # =========================
     def _get_connection(self):
+        """Apre una connessione SQLite se `sqlite_path` è impostato, altrimenti MySQL via env."""
         if self.sqlite_path:
             return sqlite3.connect(self.sqlite_path)
+
         if mysql is None:
-            raise ImportError(
-                "mysql-connector-python non installato. Usa sqlite_path o installa il connector MySQL.")
-        return mysql.connector.connect(**self.config)
+            raise RuntimeError(
+                "mysql-connector-python non disponibile e sqlite_path non impostato."
+            )
+
+        db_config = {
+            "host": os.environ.get("DB_HOST", "localhost"),
+            "user": os.environ.get("DB_USER", "root"),
+            "password": os.environ.get("DB_PASSWORD", ""),
+            "database": os.environ.get("DB_NAME", "northwind"),
+        }
+        return mysql.connector.connect(**db_config)
+
 
     # =========================
     # 🔹 ENTRY POINT

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Northwind Text-to-SQL</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .loading { display: none; }
+        #results-table { margin-top: 20px; }
+
+        .loader-container {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .spinner-pulse {
+            display: inline-block;
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+
+        .spinner-pulse div {
+            position: absolute;
+            border: 4px solid #0d6efd;
+            opacity: 1;
+            border-radius: 50%;
+            animation: spinner-pulse 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        }
+
+        .spinner-pulse div:nth-child(2) {
+            animation-delay: -0.5s;
+        }
+
+        .spinner-pulse div:nth-child(3) {
+            animation-delay: -1s;
+        }
+
+        @keyframes spinner-pulse {
+            0% {
+                top: 36px;
+                left: 36px;
+                width: 0;
+                height: 0;
+                opacity: 1;
+            }
+            100% {
+                top: 0px;
+                left: 0px;
+                width: 72px;
+                height: 72px;
+                opacity: 0;
+            }
+        }
+
+        .progress-messages {
+            margin-top: 30px;
+            text-align: left;
+        }
+
+        .progress-item {
+            margin: 15px 0;
+            padding: 12px 15px;
+            border-left: 3px solid #0d6efd;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            opacity: 0;
+            animation: fadeInSlide 0.6s ease-out forwards;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .progress-item.pending {
+            border-left-color: #ffc107;
+            background-color: #fff8e1;
+        }
+
+        .progress-item.completed {
+            border-left-color: #28a745;
+            background-color: #e8f5e9;
+        }
+
+        .progress-item.active {
+            border-left-color: #0d6efd;
+            background-color: #e7f1ff;
+            font-weight: 500;
+        }
+
+        .progress-item:nth-child(1) { animation-delay: 0.1s; }
+        .progress-item:nth-child(2) { animation-delay: 0.5s; }
+        .progress-item:nth-child(3) { animation-delay: 0.9s; }
+        .progress-item:nth-child(4) { animation-delay: 1.3s; }
+
+        @keyframes fadeInSlide {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .progress-icon {
+            min-width: 24px;
+            font-size: 18px;
+            animation: spin 2s linear infinite;
+        }
+
+        .progress-icon.completed {
+            animation: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-text {
+            flex: 1;
+        }
+
+        .db-picker-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .db-file-name {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0">📊 Northwind Text-to-SQL (API2)</h1>
+            <a href="/pool" class="btn btn-outline-secondary">Apri Pool Query</a>
+        </div>
+
+        <div class="card p-4 shadow-sm mb-3">
+            <h5 class="mb-3">Connessione Database SQLite</h5>
+            <div class="db-picker-row mb-2">
+                <input type="file" id="db-file" accept=".sqlite,.sqlite3,.db" class="d-none">
+                <button class="btn btn-outline-secondary" type="button" onclick="openDbPicker()">📎 Scegli DB</button>
+                <span id="db-file-name" class="db-file-name">Nessun file selezionato</span>
+                <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica DB</button>
+            </div>
+            <div id="db-status" class="small text-muted">Scegli un file SQLite e premi "Carica DB".</div>
+        </div>
+
+        <div class="card p-4 shadow-sm">
+            <div class="input-group mb-3">
+                <input type="text" id="question" class="form-control" placeholder="Inserisci la tua domanda...">
+                <button class="btn btn-primary" onclick="sendQuery()">Invia</button>
+            </div>
+
+            <div id="loader" class="text-center loading">
+                <div class="loader-container">
+                    <div class="spinner-pulse">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <h5 class="mt-4 text-primary">Elaborazione in corso...</h5>
+
+                    <div class="progress-messages">
+                        <div class="progress-item active" id="step-1">
+                            <span class="progress-icon">⏳</span>
+                            <span class="progress-text">Ricerca pattern analoghi nel Vector DB...</span>
+                        </div>
+                        <div class="progress-item pending" id="step-2">
+                            <span class="progress-icon">🧠</span>
+                            <span class="progress-text">Ragionamento chain-of-thought...</span>
+                        </div>
+                        <div class="progress-item pending" id="step-3">
+                            <span class="progress-icon">🔍</span>
+                            <span class="progress-text">Identificazione colonne necessarie...</span>
+                        </div>
+                        <div class="progress-item pending" id="step-4">
+                            <span class="progress-icon">✨</span>
+                            <span class="progress-text">Generazione query MySQL...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="response-area">
+                <div id="sql-preview" class="alert alert-secondary d-none"></div>
+                <div id="feedback-area" class="mb-3 d-none">
+                    <p class="mb-2">Per migliorare l'affidabilita del modello bisogna aumentare i dati che ha a disposizione. Vuoi inserire questa query che ha generato nel pool?</p>
+                    <div class="btn-group" role="group" aria-label="Feedback query">
+                        <button id="btn-correct" class="btn btn-success">Si</button>
+                        <button id="btn-wrong" class="btn btn-danger">No</button>
+                    </div>
+                    <div id="feedback-message" class="mt-2"></div>
+                </div>
+                <div class="table-responsive">
+                    <table id="results-table" class="table table-striped table-hover"></table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentQuestion = "";
+        let currentSql = "";
+        let eventSource = null;
+
+        function updateProgressStep(step) {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            const icons = ['⏳', '🧠', '🔍', '✨'];
+            const stepIndex = steps.indexOf(step);
+
+            if (stepIndex === -1) return;
+
+            for (let i = 0; i < stepIndex; i++) {
+                const element = document.getElementById(steps[i]);
+                if (element) {
+                    element.classList.remove('active', 'pending');
+                    element.classList.add('completed');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = '✓';
+                        icon.classList.add('completed');
+                    }
+                }
+            }
+
+            const currentElement = document.getElementById(step);
+            if (currentElement) {
+                currentElement.classList.remove('pending');
+                currentElement.classList.add('active');
+            }
+
+            for (let i = stepIndex + 1; i < steps.length; i++) {
+                const element = document.getElementById(steps[i]);
+                if (element) {
+                    element.classList.remove('active', 'completed');
+                    element.classList.add('pending');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = icons[i];
+                        icon.classList.remove('completed');
+                    }
+                }
+            }
+        }
+
+        function completeAllSteps() {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            steps.forEach((stepId) => {
+                const element = document.getElementById(stepId);
+                if (element) {
+                    element.classList.remove('active', 'pending');
+                    element.classList.add('completed');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = '✓';
+                        icon.classList.add('completed');
+                    }
+                }
+            });
+        }
+
+        function resetProgressSteps() {
+            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            const icons = ['⏳', '🧠', '🔍', '✨'];
+
+            steps.forEach((stepId, index) => {
+                const element = document.getElementById(stepId);
+                if (element) {
+                    element.className = 'progress-item' + (index === 0 ? ' active' : ' pending');
+                    const icon = element.querySelector('.progress-icon');
+                    if (icon) {
+                        icon.textContent = icons[index];
+                        icon.classList.remove('completed');
+                    }
+                }
+            });
+        }
+
+        function startProgressListener(sessionId) {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(`/api/progress?session_id=${encodeURIComponent(sessionId)}`);
+            eventSource.onmessage = function(event) {
+                try {
+                    const state = JSON.parse(event.data);
+                    if (state.step) {
+                        updateProgressStep(state.step);
+                    }
+                } catch (e) {
+                    // Ignora errori di parsing
+                }
+            };
+            eventSource.onerror = function() {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+            };
+        }
+
+        async function refreshHealth() {
+            const dbStatus = document.getElementById('db-status');
+            try {
+                const response = await fetch('/api/health');
+                const res = await response.json();
+                if (res.db_ready) {
+                    dbStatus.textContent = `DB attivo: ${res.db_name}`;
+                    dbStatus.className = 'small text-success';
+                } else {
+                    dbStatus.textContent = 'DB non configurato. Seleziona un file e premi Carica DB.';
+                    dbStatus.className = 'small text-warning';
+                }
+            } catch (e) {
+                dbStatus.textContent = 'Impossibile leggere lo stato del DB.';
+                dbStatus.className = 'small text-danger';
+            }
+        }
+
+        function openDbPicker() {
+            document.getElementById('db-file').click();
+        }
+
+        async function uploadDatabaseFile() {
+            const fileInput = document.getElementById('db-file');
+            const dbStatus = document.getElementById('db-status');
+            const selectedFile = fileInput.files && fileInput.files[0];
+
+            if (!selectedFile) {
+                alert('Seleziona prima un file SQLite.');
+                return;
+            }
+
+            dbStatus.textContent = 'Upload e connessione in corso...';
+            dbStatus.className = 'small text-muted';
+
+            try {
+                const response = await fetch(`/api/upload-db?filename=${encodeURIComponent(selectedFile.name)}`, {
+                    method: 'POST',
+                    body: selectedFile
+                });
+                const res = await response.json();
+
+                if (response.ok && res.success) {
+                    dbStatus.textContent = `Connesso: ${res.db_name} (${res.tables} tabelle)`;
+                    dbStatus.className = 'small text-success';
+                } else {
+                    dbStatus.textContent = res.detail || res.error || 'Errore durante la configurazione DB.';
+                    dbStatus.className = 'small text-danger';
+                }
+            } catch (e) {
+                dbStatus.textContent = 'Errore di connessione al server.';
+                dbStatus.className = 'small text-danger';
+            }
+        }
+
+        async function sendQuery() {
+            currentQuestion = document.getElementById('question').value;
+            const loader = document.getElementById('loader');
+            const table = document.getElementById('results-table');
+            const sqlPrev = document.getElementById('sql-preview');
+            const feedbackArea = document.getElementById('feedback-area');
+            const feedbackMessage = document.getElementById('feedback-message');
+
+            if (!currentQuestion) return alert('Inserisci una domanda!');
+
+            table.innerHTML = '';
+            sqlPrev.classList.add('d-none');
+            feedbackArea.classList.add('d-none');
+            feedbackMessage.textContent = '';
+            loader.style.display = 'block';
+
+            resetProgressSteps();
+
+            const sessionId = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+            startProgressListener(sessionId);
+
+            try {
+                const response = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({question: currentQuestion, session_id: sessionId})
+                });
+                const res = await response.json();
+
+                completeAllSteps();
+
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+
+                if (res.success) {
+                    currentSql = res.sql;
+                    sqlPrev.textContent = 'SQL: ' + res.sql;
+                    sqlPrev.classList.remove('d-none');
+
+                    if (!res.retrieved) {
+                        feedbackArea.classList.remove('d-none');
+                        document.getElementById('btn-correct').onclick = () => saveFeedback(true);
+                        document.getElementById('btn-wrong').onclick = () => saveFeedback(false);
+                    } else {
+                        feedbackArea.classList.add('d-none');
+                    }
+
+                    if (res.data.length > 0) {
+                        let header = '<thead><tr>' + res.columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+                        let body = '<tbody>' + res.data.map(row =>
+                            '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
+                        ).join('') + '</tbody>';
+                        table.innerHTML = header + body;
+                    } else {
+                        table.innerHTML = "<p class='text-muted'>Nessun risultato trovato.</p>";
+                    }
+                } else {
+                    alert('Errore: ' + (res.error || res.detail || 'Errore sconosciuto'));
+                }
+            } catch (e) {
+                alert('Errore di connessione al server.');
+                completeAllSteps();
+            } finally {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                }, 500);
+            }
+        }
+
+        async function saveFeedback(correct) {
+            const feedbackMessage = document.getElementById('feedback-message');
+            try {
+                const response = await fetch('/api/save', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        question: currentQuestion,
+                        sql: currentSql,
+                        correct: correct
+                    })
+                });
+                const res = await response.json();
+                if (res.success) {
+                    feedbackMessage.textContent = res.message || (correct ? 'Query salvata nel pool.' : 'Query non salvata nel pool.');
+                    feedbackMessage.className = correct ? 'text-success' : 'text-danger';
+                } else {
+                    feedbackMessage.textContent = res.error || 'Errore durante il salvataggio del feedback.';
+                    feedbackMessage.className = 'text-danger';
+                }
+            } catch (e) {
+                feedbackMessage.textContent = 'Errore di connessione al server.';
+                feedbackMessage.className = 'text-danger';
+            }
+        }
+
+        document.getElementById('db-file').addEventListener('change', (event) => {
+            const selectedFile = event.target.files && event.target.files[0];
+            const fileNameLabel = document.getElementById('db-file-name');
+            fileNameLabel.textContent = selectedFile ? selectedFile.name : 'Nessun file selezionato';
+        });
+
+        window.onload = refreshHealth;
+    </script>
+</body>
+</html>

@@ -10,7 +10,7 @@ import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from app.core.config import (POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL, TOP_K)
+from app.core.config2 import (POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL, TOP_K)
 
 
 class SPSRetriever:
@@ -28,8 +28,7 @@ class SPSRetriever:
             self.embeddings = np.load(POOL_EMBEDDINGS_PATH)
             with open(POOL_DATA_PATH, "r", encoding="utf-8") as f:
                 self.pool_data = json.load(f)
-            print(
-                f"  ✅ Retriever pronto: {len(self.pool_data)} esempi nel pool")
+            print(f"  ✅ Retriever pronto: {len(self.pool_data)} esempi nel pool")
         else:
             print("  ⚠️  Pool RAG non trovato. Il retriever userà un pool vuoto.")
             embedding_dim = self.model.get_sentence_embedding_dimension()

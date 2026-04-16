@@ -6,8 +6,6 @@ Usa l'intelligenza di RAG per estrarre logiche simili dal vecchio Vector Pool
 Spider e applicarle magicamente al nuovo Schema Northwind con sample data.
 Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
-
-
 import sqlglot
 import json
 import requests
@@ -30,7 +28,6 @@ DEBUG = False  # True per stampare dettagli di debug, False per produzione
 
 SIMILARITY_THRESHOLD = 0.50  # Similarità con la quale recupra gli esempi dal database
 
-stato = {}
 # =========================
 # OLLAMA & UTILS
 # =========================
@@ -368,8 +365,7 @@ def execute_mysql(query: str, adapter: NorthwindSchemaAdapter) -> dict:
         with adapter._get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(query)
-                cols = [desc[0]
-                        for desc in cursor.description] if cursor.description else []
+                cols = [desc[0] for desc in cursor.description] if cursor.description else []
                 data = cursor.fetchall()
                 return {"success": True, "columns": cols, "data": data}
     except Exception as e:
@@ -515,13 +511,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         # ── Placeholder check ──
         if has_placeholder(sql):
             print(f"   ⚠️  Placeholder rilevato, fix forzato...")
-            sql = clean_sql(call_ollama(build_fix_prompt(
-                query=sql,
-                error="Contains placeholders like <value>.",
-                explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.",
-                schema_text=schema_text,
-                question=q,
-            )))
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql,error="Contains placeholders like <value>.",explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.",schema_text=schema_text,question=q,)))
             sql = enforce_select_columns(sql, q)
             continue
 
@@ -594,8 +584,7 @@ def interactive_loop():
         print(f"❌ Errore critico di boot: {e}")
         return
 
-    print(
-        f"✅ Pronti. Connessione a Northwind OK ({len(valid_tables)} tabelle caricate con sample data).")
+    print(f"✅ Pronti. Connessione a Northwind OK ({len(valid_tables)} tabelle caricate con sample data).")
     print("—" * 70)
     print("🗣️  Scrivi pure la tua domanda naturale (oppure 'esci' per chiudere)\n")
 
@@ -610,8 +599,7 @@ def interactive_loop():
         if q.lower() in ('esci', 'exit', 'quit', 'q'):
             print("👋 Arrivederci!")
             break
-        res = process_question(q, retriever, adapter,
-                               schema_text, valid_tables, valid_columns)
+        res = process_question(q, retriever, adapter,schema_text, valid_tables, valid_columns)
         if res["success"]:
             print("\n📊 RISULTATI MySQL:")
             print(format_results(res))
@@ -631,7 +619,5 @@ def interactive_loop():
                     error=res.get("error", "Sconosciuto"),
                 )
                 print("   📝 Query salvata automaticamente nel pool con stato: ERRATA.")
-
-
 if __name__ == "__main__":
     interactive_loop()

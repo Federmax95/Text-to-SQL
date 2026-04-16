@@ -10,12 +10,12 @@ LLM_MODEL = "qwen2.5-coder"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 
 # Database MySQL Config (solo se usato dai moduli MySQL)
-DB_CONFIG = {
-    "host": os.environ.get("DB_HOST", "localhost"),
-    "user": os.environ.get("DB_USER", "root"),
-    "password": os.environ.get("DB_PASSWORD", ""),
-    "database": os.environ.get("DB_NAME", "northwind")
-}
+# DB_CONFIG = {
+#     "host": os.environ.get("DB_HOST", "localhost"),
+#     "user": os.environ.get("DB_USER", "root"),
+#     "password": os.environ.get("DB_PASSWORD", ""),
+#     "database": os.environ.get("DB_NAME", "northwind")
+# }
 
 # Cross-Domain RAG: Puntiamo al pool locale costruito tramite spider_data
 POOL_DIR = os.path.join(PROJECT_DIR, "data", "pool")

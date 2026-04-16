@@ -8,11 +8,11 @@ Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
 
+from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
+from app.services.retriever2 import SPSRetriever
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
 import time
 from sqlglot import exp
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
-from app.services.retriever import SPSRetriever
-from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
 import re
 import requests
 import json
@@ -368,13 +368,10 @@ def execute_query(query: str, adapter: NorthwindSchemaAdapter) -> dict:
         with adapter._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query)
-
             cols = [desc[0]
                     for desc in cursor.description] if cursor.description else []
             data = cursor.fetchall()
-
             return {"success": True, "columns": cols, "data": data}
-
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -406,14 +403,29 @@ def ask_yes_no(prompt: str) -> bool:
         print("Rispondi 'si' o 'no'.")
 
 
+def ask_db_path(default_path: str) -> str:
+    """Chiede il path del DB SQLite e risolve eventuali percorsi relativi."""
+    raw = input(f"📁 Path database SQLite [default: {default_path}]: ").strip()
+    chosen = raw if raw else default_path
+    chosen = os.path.expandvars(os.path.expanduser(chosen))
+    if not os.path.isabs(chosen):
+        chosen = os.path.join(PROJECT_DIR, chosen)
+    return os.path.abspath(chosen)
+
+
 # =========================
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict) -> dict:
+def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
+    def notify_progress(step: str, message: str = ""):
+        print(step, message)
+        if progress_callback:
+            print(progress_callback)
+            progress_callback(step, message)
 
-    # ── PHASE 1: Retrieval RAG  ──
+    notify_progress("step-1", "Ricerca pattern nel Vector DB...")
     print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
     k = 5
     similars = retriever.retrieve(q, top_k=k)
@@ -436,6 +448,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
             return res
 
     # ── PHASE 2: Chain-of-Thought Reasoning ──
+    notify_progress("step-2", "Ragionamento chain-of-thought...")
     print("🧠 Ragionamento in corso...")
     try:
         cot_prompt = build_cot_prompt(q, schema_text)
@@ -447,6 +460,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         return {"success": False, "error": str(ce)}
 
     # ── PHASE 3: Column Selection ──
+    notify_progress("step-3", "Identificazione colonne necessarie...")
     print("⏳ Identificazione colonne strettamente necessarie...")
     try:
         p_cols = build_columns_prompt(q, schema_text, sim_context)
@@ -459,6 +473,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         return {"success": False, "error": "Nessuna colonna legittima identificata per la domanda."}
 
     # ── PHASE 4: SQL Generation ──
+    notify_progress("step-4", "Generazione query MySQL...")
     print("⏳ Generazione Query Target...")
     p_sql = build_sql_prompt("\n".join(valid_cols), q,
                              schema_text, sim_context)
@@ -474,20 +489,15 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
             print(f"   🔄 AutoFix #{attempt - 1}...")
-
+            notify_progress("step-4", f"Tentativo di fix #{attempt - 1}...")
         if DEBUG:
             print("SQL: ", sql)
 
         # ── Placeholder check ──
         if has_placeholder(sql):
             print(f"   ⚠️  Placeholder rilevato, fix forzato...")
-            sql = clean_sql(call_ollama(build_fix_prompt(
-                query=sql,
-                error="Contains placeholders like <value>.",
-                explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.",
-                schema_text=schema_text,
-                question=q,
-            )))
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error="Contains placeholders like <value>.",
+                            explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.", schema_text=schema_text, question=q, )))
             sql = enforce_select_columns(sql, q)
             continue
 
@@ -547,16 +557,15 @@ def interactive_loop():
     print("\n[inizializzazione in corso... attendere]")
     try:
         retriever = SPSRetriever()
-        sqlite_path = os.environ.get(
-            "SQLITE_PATH",
-            os.path.join(PROJECT_DIR, "academic", "academic.sqlite"),
+        default_sqlite_path = os.environ.get(
+            "SQLITE_PATH", os.path.join(
+                PROJECT_DIR, "academic", "academic.sqlite")
         )
+        sqlite_path = ask_db_path(default_sqlite_path)
         if not os.path.exists(sqlite_path):
             print(f"❌ File SQLite non trovato: {sqlite_path}")
             return
-        adapter = NorthwindSchemaAdapter(
-            sqlite_path=sqlite_path
-        )
+        adapter = NorthwindSchemaAdapter(sqlite_path=sqlite_path)
         schema_data = adapter.extract_schema()
         schema_text = adapter.schema_to_text(schema_data)
         valid_tables = schema_data["valid_tables"]
@@ -590,8 +599,10 @@ def interactive_loop():
             print("\n📊 RISULTATI SQLite:")
             print(format_results(res))
             if res["retrieved"] == False:
-                retriever.add_example(q, res["sql"], is_correct=True)
-                print("   📝 Query salvata automaticamente nel pool con stato: CORRETTA.")
+                if ask_yes_no("\n✅ La query generata è corretta? [s/n]: "):
+                    retriever.add_example(q, res["sql"], is_correct=True)
+                else:
+                    retriever.add_example(q, res["sql"], is_correct=False)
         else:
             print("\n❌ ERRORE:", res.get("error", "Sconosciuto"))
             failed_sql = res.get("sql")
