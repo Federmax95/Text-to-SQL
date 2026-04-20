@@ -57,6 +57,12 @@
             font-size: 0.95rem;
         }
 
+        .status-line {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
         .btn {
             border: 0;
             border-radius: 10px;
@@ -258,6 +264,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>DB</th>
                         <th>Stato</th>
                         <th>Domanda</th>
                         <th>SQL</th>
@@ -266,7 +273,7 @@
                     </tr>
                 </thead>
                 <tbody id="pool-body">
-                    <tr><td colspan="6" class="empty">Caricamento pool in corso...</td></tr>
+                    <tr><td colspan="7" class="empty">Caricamento pool in corso...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -278,6 +285,8 @@
                 <table class="result-table" id="result-table"></table>
             </div>
         </div>
+
+        <p class="status-line" id="db-status-line">Database attivo: non caricato.</p>
     </div>
 
     <script>
@@ -293,7 +302,7 @@
         function renderRows(items) {
             const tbody = document.getElementById("pool-body");
             if (!items.length) {
-                tbody.innerHTML = "<tr><td colspan='6' class='empty'>Nessuna query nel pool.</td></tr>";
+                tbody.innerHTML = "<tr><td colspan='7' class='empty'>Nessuna query nel pool.</td></tr>";
                 return;
             }
 
@@ -305,10 +314,12 @@
                 const errorText = item.error ? escapeHtml(item.error) : "-";
                 const sqlText = escapeHtml(item.query || "");
                 const questionText = escapeHtml(item.question || "");
+                const dbIdText = escapeHtml(item.db_id || "-");
 
                 return `
                     <tr class="${rowClass}">
                         <td>${item.id}</td>
+                        <td>${dbIdText}</td>
                         <td><span class="pill ${pillClass}">${pillText}</span></td>
                         <td>${questionText}</td>
                         <td><pre class="sql">${sqlText}</pre></td>
@@ -325,10 +336,29 @@
         }
 
         let poolItems = [];
+        let activeDbId = null;
+
+        async function refreshActiveDb() {
+            const statusLine = document.getElementById("db-status-line");
+            try {
+                const response = await fetch("/api/health");
+                const data = await response.json();
+                activeDbId = data.db_id || null;
+
+                if (data.db_ready && activeDbId) {
+                    statusLine.textContent = `Database attivo: ${data.db_name} (${activeDbId})`;
+                } else {
+                    statusLine.textContent = "Database attivo: non caricato.";
+                }
+            } catch (err) {
+                activeDbId = null;
+                statusLine.textContent = "Database attivo: non disponibile.";
+            }
+        }
 
         async function loadPool() {
             const tbody = document.getElementById("pool-body");
-            tbody.innerHTML = "<tr><td colspan='6' class='empty'>Caricamento pool in corso...</td></tr>";
+            tbody.innerHTML = "<tr><td colspan='7' class='empty'>Caricamento pool in corso...</td></tr>";
             try {
                 const response = await fetch("/api/pool");
                 const data = await response.json();
@@ -338,13 +368,28 @@
                 poolItems = data.items || [];
                 renderRows(poolItems);
             } catch (err) {
-                tbody.innerHTML = `<tr><td colspan='6' class='empty error'>${escapeHtml(err.message)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan='7' class='empty error'>${escapeHtml(err.message)}</td></tr>`;
             }
         }
 
         async function runSql(id) {
             const item = poolItems.find((x) => x.id === id);
             if (!item) {
+                return;
+            }
+
+            const itemDbId = (item.db_id || "").toLowerCase();
+            if (!activeDbId) {
+                const info = document.getElementById("execution-info");
+                info.textContent = "Carica prima il database corretto per rieseguire questa query.";
+                info.className = "error";
+                return;
+            }
+
+            if (itemDbId && itemDbId !== activeDbId) {
+                const info = document.getElementById("execution-info");
+                info.textContent = `Questa query appartiene al database '${item.db_id}', ma il database attivo è '${activeDbId}'.`;
+                info.className = "error";
                 return;
             }
 
@@ -358,7 +403,7 @@
                 const response = await fetch("/api/pool/execute", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sql: item.query })
+                    body: JSON.stringify({ sql: item.query, db_id: item.db_id })
                 });
 
                 const res = await response.json();
@@ -404,7 +449,7 @@
             }
         }
 
-        loadPool();
+        Promise.all([refreshActiveDb(), loadPool()]);
     </script>
 </body>
 </html>

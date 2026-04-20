@@ -1,5 +1,8 @@
 
 
+from app.services.retriever2 import SPSRetriever
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.ask2 import process_question
 import sys
 import os
 import json
@@ -20,9 +23,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
-from app.services.ask2 import process_question
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
-from app.services.retriever2 import SPSRetriever
 
 
 class QueryRequest(BaseModel):
@@ -40,6 +40,7 @@ class SaveRequest(BaseModel):
 
 class ExecuteSqlRequest(BaseModel):
     sql: str
+    db_id: str | None = None
 
 
 class DbPathRequest(BaseModel):
@@ -74,6 +75,11 @@ def _resolve_db_path(raw_path: str) -> str:
     if not os.path.isabs(path):
         path = os.path.join(PROJECT_DIR, path)
     return os.path.abspath(path)
+
+
+def _normalize_db_id(raw_path: str, fallback_name: str | None = None) -> str:
+    base_name = fallback_name or os.path.basename(raw_path)
+    return os.path.splitext(base_name)[0].lower()
 
 
 def _store_uploaded_db(filename: str, content: bytes) -> tuple[str, str]:
@@ -119,6 +125,7 @@ def _load_database(db_path: str, db_name: str | None = None):
     app_state["valid_columns"] = valid_columns
     app_state["db_path"] = resolved_path
     app_state["db_name"] = db_name or os.path.basename(resolved_path)
+    app_state["db_id"] = _normalize_db_id(resolved_path, app_state["db_name"])
     app_state["db_ready"] = True
 
 
@@ -197,6 +204,7 @@ async def health_check():
         "message": "I motori LLM e DB sono operativi.",
         "db_ready": True,
         "db_name": app_state.get("db_name"),
+        "db_id": app_state.get("db_id"),
     }
 
 
@@ -220,6 +228,7 @@ async def set_db_path(request: DbPathRequest):
             "message": "Database configurato correttamente.",
             "db_name": app_state.get("db_name"),
             "tables": len(app_state.get("valid_tables", [])),
+            "db_id": app_state.get("db_id"),
         }
     except Exception as e:
         app_state["db_ready"] = False
@@ -246,6 +255,7 @@ async def upload_db_file(request: Request, filename: str | None = None):
             "message": "File caricato e database configurato correttamente.",
             "db_name": app_state.get("db_name"),
             "tables": len(app_state.get("valid_tables", [])),
+            "db_id": app_state.get("db_id"),
         }
     except Exception as e:
         app_state["db_ready"] = False
@@ -314,6 +324,7 @@ async def ask_question(request: QueryRequest):
         progress_callback=get_progress_callback(session_id),
         previous_sql=request.previous_sql,
         user_feedback=request.user_feedback,
+        current_db_id=app_state.get("db_id"),
     )
 
     if session_id in progress_state:
@@ -345,6 +356,7 @@ async def save_query(request: SaveRequest):
             app_state["retriever"].add_example,
             request.question,
             request.sql,
+            db_id=app_state.get("db_id", "northwind"),
             is_correct=bool(request.correct),
             error=None if request.correct else "Segnata come non corretta dall'utente",
         )
@@ -389,6 +401,22 @@ async def execute_pool_query(request: ExecuteSqlRequest):
     sql = request.sql.strip()
     if not sql:
         raise HTTPException(status_code=400, detail="La query SQL è vuota.")
+
+    active_db_id = app_state.get("db_id")
+    requested_db_id = (request.db_id or "").strip().lower() or None
+    if requested_db_id and active_db_id and requested_db_id != active_db_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"La query appartiene al database '{requested_db_id}', ma il database attivo è '{active_db_id}'. "
+                "Carica il database corretto prima di rieseguirla."
+            ),
+        )
+    if requested_db_id and not active_db_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Carica il database corretto prima di rieseguire questa query.",
+        )
 
     try:
         ast = sqlglot.parse_one(sql)

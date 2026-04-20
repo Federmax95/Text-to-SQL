@@ -8,7 +8,9 @@ Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
 
-
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.retriever2 import SPSRetriever
+from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
 import time
 from sqlglot import exp
 import re
@@ -22,10 +24,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
-
-from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
-from app.services.retriever2 import SPSRetriever
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
 
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
@@ -419,7 +417,7 @@ def ask_db_path() -> str:
 # CORE APP
 # =========================
 
-def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdapter,schema_text: str,valid_tables: set,valid_columns: dict,progress_callback=None,previous_sql: str | None = None,user_feedback: str | None = None,) -> dict:
+def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None,) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
     def notify_progress(step: str, message: str = ""):
         print(step, message)
@@ -437,7 +435,7 @@ def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdap
     notify_progress("step-1", "Ricerca pattern nel Vector DB...")
     print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
     k = 5
-    similars = retriever.retrieve(q, top_k=k)
+    similars = retriever.retrieve(q, top_k=k, db_id=current_db_id)
     max_sim = similars[0]["similarity"] if similars else 0
 
     if similars:
@@ -492,7 +490,8 @@ def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdap
     # ── PHASE 4: SQL Generation ──
     notify_progress("step-4", "Generazione query MySQL...")
     print("⏳ Generazione Query Target...")
-    p_sql = build_sql_prompt("\n".join(valid_cols), augmented_question,schema_text, sim_context)
+    p_sql = build_sql_prompt("\n".join(valid_cols),
+                             augmented_question, schema_text, sim_context)
     sql = clean_sql(call_ollama(p_sql))
     sql = enforce_select_columns(sql, augmented_question)
 
@@ -512,7 +511,8 @@ def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdap
         # ── Placeholder check ──
         if has_placeholder(sql):
             print(f"   ⚠️  Placeholder rilevato, fix forzato...")
-            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error="Contains placeholders like <value>.",explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.", schema_text=schema_text, question=augmented_question, )))
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error="Contains placeholders like <value>.",
+                            explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.", schema_text=schema_text, question=augmented_question, )))
             sql = enforce_select_columns(sql, augmented_question)
             continue
 
@@ -526,7 +526,8 @@ def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdap
         sem_err = semantic_guard(sql, augmented_question)
         if sem_err and attempt < max_attempts:
             print(f"   ⚠️ Semantic guard: {sem_err}")
-            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err, explanation=sem_err,schema_text=schema_text, question=augmented_question,)))
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err,
+                            explanation=sem_err, schema_text=schema_text, question=augmented_question,)))
             sql = enforce_select_columns(sql, augmented_question)
             continue
 
@@ -541,10 +542,12 @@ def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdap
             err = res["error"]
             print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
             if attempt < max_attempts:
-                explain = call_ollama(build_explain_prompt(sql, err, augmented_question, schema_text))
+                explain = call_ollama(build_explain_prompt(
+                    sql, err, augmented_question, schema_text))
                 if DEBUG:
                     print(f"   💡 Diagnosi: {explain[:100]}...")
-                p_fix = build_fix_prompt(sql, err, explain, schema_text, question=augmented_question)
+                p_fix = build_fix_prompt(
+                    sql, err, explain, schema_text, question=augmented_question)
                 sql = clean_sql(call_ollama(p_fix))
                 sql = enforce_select_columns(sql, augmented_question)
 
@@ -599,16 +602,21 @@ def interactive_loop():
         if q.lower() in ('esci', 'exit', 'quit', 'q'):
             print("👋 Arrivederci!")
             break
+        current_db_id = os.path.splitext(
+            os.path.basename(sqlite_path))[0].lower()
         res = process_question(q, retriever, adapter,
-                               schema_text, valid_tables, valid_columns)
+                               schema_text, valid_tables, valid_columns,
+                               current_db_id=current_db_id)
         if res["success"]:
             print("\n📊 RISULTATI SQLite:")
             print(format_results(res))
             if res["retrieved"] == False:
                 if ask_yes_no("\n✅ La query generata è corretta? [s/n]: "):
-                    retriever.add_example(q, res["sql"], is_correct=True)
+                    retriever.add_example(
+                        q, res["sql"], db_id=current_db_id, is_correct=True)
                 else:
-                    retriever.add_example(q, res["sql"], is_correct=False)
+                    retriever.add_example(
+                        q, res["sql"], db_id=current_db_id, is_correct=False)
         else:
             print("\n❌ ERRORE:", res.get("error", "Sconosciuto"))
             failed_sql = res.get("sql")
@@ -616,6 +624,7 @@ def interactive_loop():
                 retriever.add_example(
                     q,
                     failed_sql,
+                    db_id=current_db_id,
                     is_correct=False,
                     error=res.get("error", "Sconosciuto"),
                 )
