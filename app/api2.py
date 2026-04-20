@@ -1,6 +1,4 @@
-from app.services.ask2 import process_question
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
-from app.services.retriever2 import SPSRetriever
+
 import sys
 import os
 import json
@@ -21,6 +19,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
+    
+from app.services.retriever2 import SPSRetriever
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.ask2 import process_question
 
 
 class QueryRequest(BaseModel):
@@ -150,7 +152,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Northwind Text-to-SQL API2 & Web App",
+    title="Text-to-SQL API2 & Web App",
     description="Web App + API con selezione DB SQLite da interfaccia grafica.",
     version="2.0.0",
     lifespan=lifespan

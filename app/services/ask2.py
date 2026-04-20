@@ -529,8 +529,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
             err = res["error"]
             print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
             if attempt < max_attempts:
-                explain = call_ollama(
-                    build_explain_prompt(sql, err, q, schema_text))
+                explain = call_ollama(build_explain_prompt(sql, err, q, schema_text))
                 if DEBUG:
                     print(f"   💡 Diagnosi: {explain[:100]}...")
                 p_fix = build_fix_prompt(
