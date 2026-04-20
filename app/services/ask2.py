@@ -8,9 +8,7 @@ Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
 
-from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
-from app.services.retriever2 import SPSRetriever
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
+
 import time
 from sqlglot import exp
 import re
@@ -24,6 +22,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
+
+from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
+from app.services.retriever2 import SPSRetriever
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
 
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
@@ -403,10 +405,10 @@ def ask_yes_no(prompt: str) -> bool:
         print("Rispondi 'si' o 'no'.")
 
 
-def ask_db_path(default_path: str) -> str:
+def ask_db_path() -> str:
     """Chiede il path del DB SQLite e risolve eventuali percorsi relativi."""
-    raw = input(f"📁 Path database SQLite [default: {default_path}]: ").strip()
-    chosen = raw if raw else default_path
+    raw = input(f"📁 Path database SQLite: ").strip()
+    chosen = raw.strip().strip('"').strip("'")
     chosen = os.path.expandvars(os.path.expanduser(chosen))
     if not os.path.isabs(chosen):
         chosen = os.path.join(PROJECT_DIR, chosen)
@@ -417,13 +419,20 @@ def ask_db_path(default_path: str) -> str:
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None) -> dict:
+def process_question(q: str,retriever: SPSRetriever,adapter: NorthwindSchemaAdapter,schema_text: str,valid_tables: set,valid_columns: dict,progress_callback=None,previous_sql: str | None = None,user_feedback: str | None = None,) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
     def notify_progress(step: str, message: str = ""):
         print(step, message)
         if progress_callback:
             print(progress_callback)
             progress_callback(step, message)
+
+    augmented_question = q
+    if user_feedback:
+        augmented_question = (
+            f"{q}\n\n"
+            f"Additional user feedback about previous wrong SQL:\n{user_feedback.strip()}"
+        )
 
     notify_progress("step-1", "Ricerca pattern nel Vector DB...")
     print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
@@ -439,7 +448,14 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         sim_context = retriever.format_examples(similars)
     else:
         sim_context = ""
-    if (max_sim > 0.90):
+    if previous_sql:
+        sim_context = (
+            f"{sim_context}\n\n"
+            "/* Previous wrong SQL (do not repeat this error) */\n"
+            f"{previous_sql}"
+        )
+
+    if (max_sim > 0.90) and not user_feedback:
         res = execute_query(similars[0]['query'], adapter)
         if res["success"]:
             print(f"\n🖥️  QUERY ESEGUITA:\n   {similars[0]['query']}")
@@ -451,7 +467,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
     notify_progress("step-2", "Ragionamento chain-of-thought...")
     print("🧠 Ragionamento in corso...")
     try:
-        cot_prompt = build_cot_prompt(q, schema_text)
+        cot_prompt = build_cot_prompt(augmented_question, schema_text)
         reasoning = call_ollama(cot_prompt)
         if DEBUG:
             print(f"   💭 {reasoning[:200]}")
@@ -463,7 +479,8 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
     notify_progress("step-3", "Identificazione colonne necessarie...")
     print("⏳ Identificazione colonne strettamente necessarie...")
     try:
-        p_cols = build_columns_prompt(q, schema_text, sim_context)
+        p_cols = build_columns_prompt(
+            augmented_question, schema_text, sim_context)
         cols_raw = call_ollama(p_cols)
     except ConnectionError as ce:
         return {"success": False, "error": str(ce)}
@@ -475,13 +492,12 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
     # ── PHASE 4: SQL Generation ──
     notify_progress("step-4", "Generazione query MySQL...")
     print("⏳ Generazione Query Target...")
-    p_sql = build_sql_prompt("\n".join(valid_cols), q,
-                             schema_text, sim_context)
+    p_sql = build_sql_prompt("\n".join(valid_cols), augmented_question,schema_text, sim_context)
     sql = clean_sql(call_ollama(p_sql))
-    sql = enforce_select_columns(sql, q)
+    sql = enforce_select_columns(sql, augmented_question)
 
     # ── Pre-validation check ──
-    pre_check_error = semantic_guard(sql, q)
+    pre_check_error = semantic_guard(sql, augmented_question)
     if pre_check_error:
         print(f"   🔴 Pre-check: {pre_check_error[:80]}...")
 
@@ -496,9 +512,8 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
         # ── Placeholder check ──
         if has_placeholder(sql):
             print(f"   ⚠️  Placeholder rilevato, fix forzato...")
-            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error="Contains placeholders like <value>.",
-                            explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.", schema_text=schema_text, question=q, )))
-            sql = enforce_select_columns(sql, q)
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error="Contains placeholders like <value>.",explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.", schema_text=schema_text, question=augmented_question, )))
+            sql = enforce_select_columns(sql, augmented_question)
             continue
 
         # ── Syntax validation (solo SELECT) ──
@@ -508,14 +523,11 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
             return {"success": False, "error": validation_err, "sql": sql}
 
         # ── Semantic guard pre-fix ──
-        sem_err = semantic_guard(sql, q)
+        sem_err = semantic_guard(sql, augmented_question)
         if sem_err and attempt < max_attempts:
             print(f"   ⚠️ Semantic guard: {sem_err}")
-            sql = clean_sql(call_ollama(build_fix_prompt(
-                query=sql, error=sem_err, explanation=sem_err,
-                schema_text=schema_text, question=q,
-            )))
-            sql = enforce_select_columns(sql, q)
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err, explanation=sem_err,schema_text=schema_text, question=augmented_question,)))
+            sql = enforce_select_columns(sql, augmented_question)
             continue
 
         # ── Execution ──
@@ -529,13 +541,12 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
             err = res["error"]
             print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
             if attempt < max_attempts:
-                explain = call_ollama(build_explain_prompt(sql, err, q, schema_text))
+                explain = call_ollama(build_explain_prompt(sql, err, augmented_question, schema_text))
                 if DEBUG:
                     print(f"   💡 Diagnosi: {explain[:100]}...")
-                p_fix = build_fix_prompt(
-                    sql, err, explain, schema_text, question=q)
+                p_fix = build_fix_prompt(sql, err, explain, schema_text, question=augmented_question)
                 sql = clean_sql(call_ollama(p_fix))
-                sql = enforce_select_columns(sql, q)
+                sql = enforce_select_columns(sql, augmented_question)
 
     print("\n❌ Impossibile generare una query SQLite valida (Tentativi esauriti).")
     return {"success": False, "error": "Tentativi esauriti.", "sql": sql}
@@ -547,8 +558,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAd
 
 def interactive_loop():
     print("=" * 70)
-    print("🚀  NORTHWIND Text-to-SQL 🚀".center(70))
-    print("   Database:   SQLite (file academic.sqlite)")
+    print("🚀 Text-to-SQL 🚀".center(70))
     print(f"   Modello:    {LLM_MODEL}")
     print(f"   RAG Vector: Top {TOP_K} Cross-Domain Pattern da memoria")
     print("=" * 70)
@@ -556,11 +566,8 @@ def interactive_loop():
     print("\n[inizializzazione in corso... attendere]")
     try:
         retriever = SPSRetriever()
-        default_sqlite_path = os.environ.get(
-            "SQLITE_PATH", os.path.join(
-                PROJECT_DIR, "academic", "academic.sqlite")
-        )
-        sqlite_path = ask_db_path(default_sqlite_path)
+        sqlite_path = ask_db_path()
+        print(sqlite_path)
         if not os.path.exists(sqlite_path):
             print(f"❌ File SQLite non trovato: {sqlite_path}")
             return
@@ -570,7 +577,7 @@ def interactive_loop():
         valid_tables = schema_data["valid_tables"]
         valid_columns = schema_data["valid_columns"]
         if not valid_tables:
-            print("❌ Impossibile leggere il database Northwind SQLite.")
+            print("❌ Impossibile leggere il database SQLite.")
             return
     except Exception as e:
         print(f"❌ Errore critico di boot: {e}")

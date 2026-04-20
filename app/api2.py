@@ -1,4 +1,5 @@
 
+
 import sys
 import os
 import json
@@ -19,15 +20,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
-    
-from app.services.retriever2 import SPSRetriever
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
 from app.services.ask2 import process_question
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.retriever2 import SPSRetriever
 
 
 class QueryRequest(BaseModel):
     question: str
     session_id: str | None = None
+    previous_sql: str | None = None
+    user_feedback: str | None = None
 
 
 class SaveRequest(BaseModel):
@@ -309,7 +311,9 @@ async def ask_question(request: QueryRequest):
         schema_text=app_state["schema_text"],
         valid_tables=app_state["valid_tables"],
         valid_columns=app_state["valid_columns"],
-        progress_callback=get_progress_callback(session_id)
+        progress_callback=get_progress_callback(session_id),
+        previous_sql=request.previous_sql,
+        user_feedback=request.user_feedback,
     )
 
     if session_id in progress_state:

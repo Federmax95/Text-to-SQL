@@ -135,16 +135,20 @@
             justify-content: flex-end;
             margin-bottom: 10px;
         }
+
+        body.generating [data-hide-on-generate] {
+            display: none !important;
+        }
     </style>
 </head>
 <body class="bg-light">
     <div class="container py-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-4" data-hide-on-generate>
             <h1 class="mb-0">Text-to-SQL</h1>
             <a href="/pool" class="btn btn-outline-secondary">Apri Pool Query</a>
         </div>
 
-        <div class="card p-4 shadow-sm mb-3">
+        <div class="card p-4 shadow-sm mb-3" data-hide-on-generate>
             <h5 class="mb-3">Connessione Database SQLite</h5>
             <div class="db-picker-row mb-2">
                 <input type="file" id="db-file" accept=".sqlite,.sqlite3,.db" class="d-none">
@@ -156,14 +160,14 @@
         </div>
 
         <div class="card p-4 shadow-sm">
-            <div class="reasoning-toggle-row">
+            <div class="reasoning-toggle-row" data-hide-on-generate>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="reasoning-toggle" checked>
                     <label class="form-check-label" for="reasoning-toggle">Mostra Step</label>
                 </div>
             </div>
 
-            <div class="input-group mb-3">
+            <div class="input-group mb-3" data-hide-on-generate>
                 <input type="text" id="question" class="form-control" placeholder="Inserisci la tua domanda...">
                 <button class="btn btn-primary" onclick="sendQuery()">Invia</button>
             </div>
@@ -198,13 +202,18 @@
                 </div>
             </div>
 
-            <div id="response-area">
+            <div id="response-area" data-hide-on-generate>
                 <div id="sql-preview" class="alert alert-secondary d-none"></div>
                 <div id="feedback-area" class="mb-3 d-none">
                     <p class="mb-2">La query generata è corretta?</p>
                     <div class="btn-group" role="group" aria-label="Feedback query">
                         <button id="btn-correct" class="btn btn-success">Si</button>
                         <button id="btn-wrong" class="btn btn-danger">No</button>
+                    </div>
+                    <div id="wrong-feedback-form" class="mt-3 d-none">
+                        <label for="wrong-feedback-text" class="form-label">Spiega cosa non va nella query</label>
+                        <textarea id="wrong-feedback-text" class="form-control" rows="3" placeholder="Es: manca il filtro per anno, voglio solo clienti attivi..."></textarea>
+                        <button id="btn-retry-with-feedback" class="btn btn-warning mt-2" type="button">Rigenera con spiegazione</button>
                     </div>
                     <div id="feedback-message" class="mt-2"></div>
                 </div>
@@ -219,6 +228,33 @@
         let currentQuestion = "";
         let currentSql = "";
         let eventSource = null;
+
+        function setGenerationMode(isGenerating) {
+            document.body.classList.toggle('generating', isGenerating);
+        }
+
+        function setupFeedbackHandlers() {
+            const feedbackArea = document.getElementById('feedback-area');
+            const wrongFeedbackForm = document.getElementById('wrong-feedback-form');
+            const wrongFeedbackText = document.getElementById('wrong-feedback-text');
+            const btnCorrect = document.getElementById('btn-correct');
+            const btnWrong = document.getElementById('btn-wrong');
+
+            feedbackArea.classList.remove('d-none');
+            wrongFeedbackForm.classList.add('d-none');
+            wrongFeedbackText.value = '';
+
+            btnCorrect.onclick = async () => {
+                await saveFeedback(true);
+                wrongFeedbackForm.classList.add('d-none');
+            };
+
+            btnWrong.onclick = async () => {
+                await saveFeedback(false);
+                wrongFeedbackForm.classList.remove('d-none');
+                wrongFeedbackText.focus();
+            };
+        }
 
         function setReasoningVisibility() {
             const toggle = document.getElementById('reasoning-toggle');
@@ -386,6 +422,8 @@
             const sqlPrev = document.getElementById('sql-preview');
             const feedbackArea = document.getElementById('feedback-area');
             const feedbackMessage = document.getElementById('feedback-message');
+            const wrongFeedbackForm = document.getElementById('wrong-feedback-form');
+            const wrongFeedbackText = document.getElementById('wrong-feedback-text');
 
             if (!currentQuestion) return alert('Inserisci una domanda!');
 
@@ -393,7 +431,10 @@
             sqlPrev.classList.add('d-none');
             feedbackArea.classList.add('d-none');
             feedbackMessage.textContent = '';
+            wrongFeedbackForm.classList.add('d-none');
+            wrongFeedbackText.value = '';
             loader.style.display = 'block';
+            setGenerationMode(true);
 
             resetProgressSteps();
 
@@ -424,9 +465,7 @@
                     sqlPrev.classList.remove('d-none');
 
                     if (!res.retrieved) {
-                        feedbackArea.classList.remove('d-none');
-                        document.getElementById('btn-correct').onclick = () => saveFeedback(true);
-                        document.getElementById('btn-wrong').onclick = () => saveFeedback(false);
+                        setupFeedbackHandlers();
                     } else {
                         feedbackArea.classList.add('d-none');
                     }
@@ -453,12 +492,18 @@
                 }
                 setTimeout(() => {
                     loader.style.display = 'none';
+                    setGenerationMode(false);
                 }, 500);
             }
         }
 
         async function saveFeedback(correct) {
             const feedbackMessage = document.getElementById('feedback-message');
+            const btnCorrect = document.getElementById('btn-correct');
+            const btnWrong = document.getElementById('btn-wrong');
+
+            btnCorrect.disabled = true;
+            btnWrong.disabled = true;
             try {
                 const response = await fetch('/api/save', {
                     method: 'POST',
@@ -473,13 +518,103 @@
                 if (res.success) {
                     feedbackMessage.textContent = res.message || (correct ? 'Query salvata nel pool.' : 'Query non salvata nel pool.');
                     feedbackMessage.className = correct ? 'text-success' : 'text-danger';
+                    return true;
                 } else {
                     feedbackMessage.textContent = res.error || 'Errore durante il salvataggio del feedback.';
                     feedbackMessage.className = 'text-danger';
+                    return false;
                 }
             } catch (e) {
                 feedbackMessage.textContent = 'Errore di connessione al server.';
                 feedbackMessage.className = 'text-danger';
+                return false;
+            } finally {
+                btnCorrect.disabled = false;
+                btnWrong.disabled = false;
+            }
+        }
+
+        async function retryWithUserFeedback() {
+            const feedbackMessage = document.getElementById('feedback-message');
+            const wrongFeedbackText = document.getElementById('wrong-feedback-text');
+            const feedback = wrongFeedbackText.value.trim();
+            const loader = document.getElementById('loader');
+            const table = document.getElementById('results-table');
+            const sqlPrev = document.getElementById('sql-preview');
+
+            if (!feedback) {
+                feedbackMessage.textContent = 'Inserisci una spiegazione prima di rigenerare.';
+                feedbackMessage.className = 'text-danger';
+                return;
+            }
+
+            loader.style.display = 'block';
+            feedbackMessage.textContent = 'Rigenerazione in corso...';
+            feedbackMessage.className = 'text-muted';
+            setGenerationMode(true);
+
+            const sessionId = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+            startProgressListener(sessionId);
+
+            try {
+                const response = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        question: currentQuestion,
+                        session_id: sessionId,
+                        previous_sql: currentSql,
+                        user_feedback: feedback
+                    })
+                });
+                const res = await response.json();
+
+                completeAllSteps();
+
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+
+                if (res.success) {
+                    currentSql = res.sql;
+                    sqlPrev.textContent = 'SQL: ' + res.sql;
+                    sqlPrev.classList.remove('d-none');
+
+                    setupFeedbackHandlers();
+
+                    if (res.data.length > 0) {
+                        let header = '<thead><tr>' + res.columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+                        let body = '<tbody>' + res.data.map(row =>
+                            '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
+                        ).join('') + '</tbody>';
+                        table.innerHTML = header + body;
+                    } else {
+                        table.innerHTML = "<p class='text-muted'>Nessun risultato trovato.</p>";
+                    }
+
+                    feedbackMessage.textContent = 'Query rigenerata usando la tua spiegazione.';
+                    feedbackMessage.className = 'text-success';
+                } else {
+                    feedbackMessage.textContent = 'Errore: ' + (res.error || res.detail || 'Errore sconosciuto');
+                    feedbackMessage.className = 'text-danger';
+                }
+            } catch (e) {
+                feedbackMessage.textContent = 'Errore di connessione durante la rigenerazione.';
+                feedbackMessage.className = 'text-danger';
+                completeAllSteps();
+            } finally {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                    setGenerationMode(false);
+                }, 500);
             }
         }
 
@@ -488,6 +623,8 @@
             const fileNameLabel = document.getElementById('db-file-name');
             fileNameLabel.textContent = selectedFile ? selectedFile.name : 'Nessun file selezionato';
         });
+
+        document.getElementById('btn-retry-with-feedback').addEventListener('click', retryWithUserFeedback);
 
         document.getElementById('reasoning-toggle').addEventListener('change', setReasoningVisibility);
 
