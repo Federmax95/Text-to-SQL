@@ -116,3 +116,67 @@ docker-compose up --build
 3. Vai nell'interfaccia! Naviga su: [http://localhost:8000](http://localhost:8000)
 
 > ⏱️ **Nota Iniziale:** Al primissimo avvio ci vorranno alcuni minuti extra (soprattutto in base alla connessione a internet) necessari a Docker per scaricare le immagini di MySQL, Ollama e soprattutto per far estrarre dal container `ollama-pull-model` l'LLM (`qwen2.5-coder` pre-impostato, circa 4.5 GB).
+
+---
+
+## Dashboard Grafana: Query Riuscite vs Fallite
+
+La nuova versione registra eventi in tabella MySQL `query_events` (script `init_db/03-query-events.sql`) quando:
+
+- chiami `/api/ask` (`event_type = 'ask'`)
+- salvi feedback da UI (`event_type = 'feedback'`)
+
+### 1) Avvio servizi
+
+Con Docker Compose è incluso anche Grafana:
+
+```bash
+docker-compose up --build
+```
+
+Grafana sarà disponibile su [http://localhost:3000](http://localhost:3000) con credenziali iniziali:
+
+- user: `admin`
+- password: `admin`
+
+### 2) Data source MySQL in Grafana
+
+In Grafana aggiungi Data Source MySQL con:
+
+- Host: `db:3306`
+- Database: `northwind`
+- User: `root`
+- Password: valore di `DB_PASSWORD` (default `root`)
+
+### 3) Query pannello Time Series (success/fail nel tempo)
+
+```sql
+SELECT
+   UNIX_TIMESTAMP(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')) AS time,
+   SUM(CASE WHEN is_success = 1 THEN 1 ELSE 0 END) AS succeeded,
+   SUM(CASE WHEN is_success = 0 THEN 1 ELSE 0 END) AS failed
+FROM query_events
+WHERE $__timeFilter(created_at)
+   AND event_type = 'ask'
+GROUP BY 1
+ORDER BY 1;
+```
+
+### 4) Query pannello Pie Chart (totale success/fail)
+
+```sql
+SELECT
+   CASE WHEN is_success = 1 THEN 'Riuscite' ELSE 'Fallite' END AS metric,
+   COUNT(*) AS value
+FROM query_events
+WHERE event_type = 'ask'
+GROUP BY is_success;
+```
+
+### Nota importante
+
+Se il volume MySQL esiste già, i nuovi script in `init_db/` non vengono rieseguiti automaticamente. In quel caso crea la tabella manualmente:
+
+```sql
+SOURCE /docker-entrypoint-initdb.d/03-query-events.sql;
+```

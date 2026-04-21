@@ -1,8 +1,4 @@
 
-
-from app.services.retriever2 import SPSRetriever
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
-from app.services.ask2 import process_question
 import sys
 import os
 import json
@@ -24,6 +20,9 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
+from app.services.retriever2 import SPSRetriever
+from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.ask2 import process_question
 
 class QueryRequest(BaseModel):
     question: str
@@ -161,7 +160,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Text-to-SQL API2 & Web App",
+    title="Text-to-SQL API & Web App",
     description="Web App + API con selezione DB SQLite da interfaccia grafica.",
     version="2.0.0",
     lifespan=lifespan
@@ -434,17 +433,13 @@ async def execute_pool_query(request: ExecuteSqlRequest):
             with app_state["adapter"]._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql)
-                cols = [d[0]
-                        for d in cursor.description] if cursor.description else []
+                cols = [d[0] for d in cursor.description] if cursor.description else []
                 rows = cursor.fetchall()
             return cols, rows
 
         columns, data = await run_in_threadpool(_execute)
 
-        safe_data = [
-            [_json_safe_value(cell) for cell in row]
-            for row in data
-        ]
+        safe_data = [[_json_safe_value(cell) for cell in row] for row in data]
 
         return {
             "success": True,

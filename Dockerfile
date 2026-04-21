@@ -23,4 +23,4 @@ ENV PYTHONPATH=/app
 EXPOSE 8000
 
 # Avvia Uvicorn (FastAPI)
-CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.api2:app", "--host", "0.0.0.0", "--port", "8000"]
