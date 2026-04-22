@@ -1,3 +1,6 @@
 pool
 __pycache__
 data
+spider_data
+results
+scripts/benchmark_ask2_spider.py

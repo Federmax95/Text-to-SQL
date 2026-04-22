@@ -46,6 +46,7 @@ class Retriever:
         Returns:
             Lista di dict con: question, query, db_id, similarity
         """
+        #Se non è stato specificato dall'utente il numero di esempi da estrarre verranno estratti in automatico 5 esempi dal pool
         if top_k is None:
             top_k = TOP_K
 
@@ -153,11 +154,7 @@ class Retriever:
         # Salva su disco per persistenza
         with open(POOL_DATA_PATH, "w", encoding="utf-8") as f:
             json.dump(self.pool_data, f, ensure_ascii=False, indent=2)
-
         np.save(POOL_EMBEDDINGS_PATH, self.embeddings)
-
         quality_label = "corretto" if is_correct else "errato"
-        print(
-            f"  ✅ Esempio aggiunto al pool ({quality_label}): '{question}' (db_id={db_id})"
-        )
+        print(f"  ✅ Esempio aggiunto al pool ({quality_label}): '{question}' (db_id={db_id})")
         return True

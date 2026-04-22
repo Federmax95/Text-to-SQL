@@ -1,16 +1,14 @@
 """
-🔎 Northwind RAG-SQL (Interactive Mode) - SOLO SELECT
+🔎 Text to SQL
 =======================================
-Ti permette di fare domande in linguaggio naturale sul DB Northwind SQLite.
-Usa l'intelligenza di RAG per estrarre logiche simili dal vecchio Vector Pool 
-Spider e applicarle magicamente al nuovo Schema Northwind con sample data.
+Ti permette di fare domande in linguaggio naturale su di un dataset a scelta in SQLite.
+Estrae lo schema del dataset mandato in input e lo formatta per mandarlo all'llm.
+Usa un vector pool per estrarre gli esempi più vicini alla domanda dell'utente (RAG).
 Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
 
-from app.services.schema_adapter2 import SchemaAdapter
-from app.services.retriever2 import Retriever
-from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
+
 import time
 from sqlglot import exp
 import re
@@ -25,46 +23,47 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
+from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
+from app.services.retriever2 import Retriever
+from app.services.schema_adapter2 import SchemaAdapter
+
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
 
-SIMILARITY_THRESHOLD = 0.50  # Similarità con la quale recupra gli esempi dal database
+# Similarità con la quale recupera gli esempi dal database
+SIMILARITY_THRESHOLD = 0.50
 
 
 # =========================
 # OLLAMA & UTILS
 # =========================
 
-
-def call_ollama(prompt: str) -> str:
-    try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={"model": LLM_MODEL, "prompt": prompt, "stream": False},
-            timeout=120
-        )
-        response.raise_for_status()
-        return response.json()["response"].strip()
-    except:
-        print("⏳ Attendo Ollama...")
-        time.sleep(3)
-
+# Funzione per chiamare l'api di ollama
+def call_ollama(prompt: str, retries=5) -> str:
+    # Riprova 5 volte a chiamare il servizio se non riesce fallisce
+    for _ in range(retries):
+        try:
+            response = requests.post(
+                OLLAMA_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=120)
+            response.raise_for_status()
+            return response.json()["response"].strip()
+        except:
+            print("⏳ Attendo Ollama...")
+            time.sleep(2)
     raise ConnectionError("Ollama non raggiungibile.")
 
 
 def clean_sql(response: str) -> str:
     """Estrae codice SQL puro dai blocchi markdown."""
+    # Rimuovo gli spazi ad inizio e fine stringa
     response = response.strip()
+    # cerco all'interno del prompt la query sql generata
     match = re.search(r"```(?:sql)?\s*\n?(.*?)```",
                       response, re.DOTALL | re.IGNORECASE)
     if match:
+        # se l'ho trovata la restituisco
         return match.group(1).strip()
     return response.strip()
-
-
-def has_placeholder(sql: str) -> bool:
-    """Controlla se la query contiene placeholder (<value>, <id>, ecc.)."""
-    return bool(re.search(r"<[^>]+>", sql))
 
 
 # =========================
@@ -92,12 +91,15 @@ def build_cot_prompt(question: str, schema_text: str) -> str:
             ### Your reasoning:"""
 
 
-def build_columns_prompt(question: str, schema_text: str, similar: str) -> str:
+def build_columns_prompt(question: str, schema_text: str, similar: str, reasoning: str = "") -> str:
     return f"""You are a SQLite schema analyzer.
             {schema_text}
 
             ### Similar conceptual SQL pattern (for inspiration only):
             {similar}
+
+            ### Prior reasoning context (from previous step):
+            {reasoning}
 
             ### Rules:
             - Output ONLY the columns from the schema above needed to answer the question.
@@ -112,12 +114,15 @@ def build_columns_prompt(question: str, schema_text: str, similar: str) -> str:
             """
 
 
-def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str) -> str:
+def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str, reasoning: str = "") -> str:
     return f"""You are an elite SQLite query generator.
             {schema_text}
 
             ### Similar Concept Reference:
             {similar}
+
+            ### Prior reasoning context (from previous step):
+            {reasoning}
 
             ### ━━ CRITICAL RULES ━━
             - Generate ONLY valid SQLite syntax. No explanations. No markdown.
@@ -191,7 +196,7 @@ def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str
             """
 
 
-def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str, question: str) -> str:
+def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str, question: str, reasoning: str = "") -> str:
     return f"""You are a SQLite expert fixing a query.
 
             ### Schema:
@@ -199,6 +204,9 @@ def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str,
 
             ### Question:
             {question}
+
+            ### Prior reasoning context (from previous step):
+            {reasoning}
 
             ### Original Query:
             {query}
@@ -307,8 +315,7 @@ def enforce_select_columns(sql: str, question: str) -> str:
     """Rimuove colonne helper non richieste (count, score, rank) dal SELECT."""
     if "how many" in question.lower():
         return sql
-    sql = re.sub(r",\s*COUNT\([^)]*\)\s+AS\s+\w+",
-                 "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r",\s*COUNT\([^)]*\)\s+AS\s+\w+","", sql, flags=re.IGNORECASE)
     sql = re.sub(r",\s*\w*_?count\b(?!\()", "", sql, flags=re.IGNORECASE)
     sql = re.sub(r",\s*\w*_?score\b", "", sql, flags=re.IGNORECASE)
     sql = re.sub(r",\s*\w*_?rank\b(?!\()", "", sql, flags=re.IGNORECASE)
@@ -363,12 +370,13 @@ def validate_sql_syntax(sql: str) -> tuple[bool, str]:
 
 
 # Esegue la query generata
-def execute_query(query: str, adapter: NorthwindSchemaAdapter) -> dict:
+def execute_query(query: str, adapter: SchemaAdapter) -> dict:
     try:
         with adapter._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query)
-            cols = [desc[0] for desc in cursor.description] if cursor.description else []
+            cols = [desc[0]
+                    for desc in cursor.description] if cursor.description else []
             data = cursor.fetchall()
             return {"success": True, "columns": cols, "data": data}
     except Exception as e:
@@ -384,7 +392,8 @@ def format_results(result: dict, max_rows: int = 25) -> str:
     data = result["data"][:max_rows]
     json_data = []
     for row in data:
-        row_dict = {cols[i]: str(val) if val is not None else None for i, val in enumerate(row)}
+        row_dict = {cols[i]: str(
+            val) if val is not None else None for i, val in enumerate(row)}
         json_data.append(row_dict)
     out_json = json.dumps(json_data, indent=2, ensure_ascii=False)
     return out_json
@@ -415,7 +424,7 @@ def ask_db_path() -> str:
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None,) -> dict:
+def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None,) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
     def notify_progress(step: str, message: str = ""):
         if progress_callback:
@@ -463,6 +472,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, sc
     try:
         cot_prompt = build_cot_prompt(augmented_question, schema_text)
         reasoning = call_ollama(cot_prompt)
+        reasoning = reasoning.strip()
         if DEBUG:
             print(f"   💭 {reasoning[:200]}")
     except ConnectionError as ce:
@@ -474,7 +484,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, sc
     print("⏳ Identificazione colonne strettamente necessarie...")
     try:
         p_cols = build_columns_prompt(
-            augmented_question, schema_text, sim_context)
+            augmented_question, schema_text, sim_context, reasoning)
         cols_raw = call_ollama(p_cols)
     except ConnectionError as ce:
         return {"success": False, "error": str(ce)}
@@ -486,8 +496,8 @@ def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, sc
     # ── PHASE 4: SQL Generation ──
     notify_progress("step-4", "Generazione query MySQL...")
     print("⏳ Generazione Query Target...")
-    p_sql = build_sql_prompt("\n".join(valid_cols),
-                             augmented_question, schema_text, sim_context)
+    p_sql = build_sql_prompt(
+        "\n".join(valid_cols), augmented_question, schema_text, sim_context, reasoning)
     sql = clean_sql(call_ollama(p_sql))
     sql = enforce_select_columns(sql, augmented_question)
 
@@ -504,14 +514,6 @@ def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, sc
         if DEBUG:
             print("SQL: ", sql)
 
-        # ── Placeholder check ──
-        if has_placeholder(sql):
-            print(f"   ⚠️  Placeholder rilevato, fix forzato...")
-            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error="Contains placeholders like <value>.",
-                            explanation="NEVER use placeholders. Derive all values from the schema or use LIKE.", schema_text=schema_text, question=augmented_question, )))
-            sql = enforce_select_columns(sql, augmented_question)
-            continue
-
         # ── Syntax validation (solo SELECT) ──
         is_valid, validation_err = validate_sql_syntax(sql)
         if not is_valid:
@@ -522,8 +524,8 @@ def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, sc
         sem_err = semantic_guard(sql, augmented_question)
         if sem_err and attempt < max_attempts:
             print(f"   ⚠️ Semantic guard: {sem_err}")
-            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err,
-                            explanation=sem_err, schema_text=schema_text, question=augmented_question,)))
+            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err, explanation=sem_err,
+                            schema_text=schema_text, question=augmented_question, reasoning=reasoning,)))
             sql = enforce_select_columns(sql, augmented_question)
             continue
 
@@ -543,7 +545,7 @@ def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, sc
                 if DEBUG:
                     print(f"   💡 Diagnosi: {explain[:100]}...")
                 p_fix = build_fix_prompt(
-                    sql, err, explain, schema_text, question=augmented_question)
+                    sql, err, explain, schema_text, question=augmented_question, reasoning=reasoning)
                 sql = clean_sql(call_ollama(p_fix))
                 sql = enforce_select_columns(sql, augmented_question)
 
@@ -582,7 +584,7 @@ def interactive_loop():
         return
 
     print(
-        f"✅ Pronti. Connessione a Northwind OK ({len(valid_tables)} tabelle caricate con sample data).")
+        f"✅ Pronti. Connessione a {sqlite_path} OK ({len(valid_tables)} tabelle caricate con sample data).")
     print("—" * 70)
     print("🗣️  Scrivi pure la tua domanda naturale (oppure 'esci' per chiudere)\n")
 
@@ -616,13 +618,8 @@ def interactive_loop():
             print("\n❌ ERRORE:", res.get("error", "Sconosciuto"))
             failed_sql = res.get("sql")
             if failed_sql:
-                retriever.add_example(
-                    q,
-                    failed_sql,
-                    db_id=current_db_id,
-                    is_correct=False,
-                    error=res.get("error", "Sconosciuto"),
-                )
+                retriever.add_example(q, failed_sql, db_id=current_db_id,
+                                      is_correct=False, error=res.get("error", "Sconosciuto"))
                 print("   📝 Query salvata automaticamente nel pool con stato: ERRATA.")
 
 

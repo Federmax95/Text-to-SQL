@@ -156,11 +156,11 @@
             <h5 class="mb-3">Connessione Database SQLite</h5>
             <div class="db-picker-row mb-2">
                 <input type="file" id="db-file" accept=".sqlite,.sqlite3,.db" class="d-none">
-                <button class="btn btn-outline-secondary" type="button" onclick="openDbPicker()">📎 Scegli DB</button>
+                <button class="btn btn-outline-secondary" type="button" onclick="openDbPicker()">📎 Scegli Dataset</button>
                 <span id="db-file-name" class="db-file-name">Nessun file selezionato</span>
-                <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica DB</button>
+                <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica Dataset</button>
             </div>
-            <div id="db-status" class="small text-muted">Scegli un file SQLite e premi "Carica DB".</div>
+            <div id="db-status" class="small text-muted">Scegli un file SQLite e premi "Carica Dataset".</div>
         </div>
 
         <div class="card p-4 shadow-sm">
@@ -370,7 +370,7 @@
                 const response = await fetch('/api/health');
                 const res = await response.json();
                 if (res.db_ready) {
-                    dbStatus.textContent = `DB attivo: ${res.db_name}`;
+                    dbStatus.textContent = `Dataset attivo: ${res.db_name}`;
                     dbStatus.className = 'small text-success';
                 } else {
                     dbStatus.textContent = 'DB non configurato. Seleziona un file e premi Carica DB.';

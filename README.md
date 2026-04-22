@@ -1,182 +1,153 @@
-# Northwind Text-to-SQL
+# Text-to-SQL: Versione 1 e Versione 2
 
-Un sistema avanzato basato su AI in grado di interrogare un database relazionale (MySQL) in linguaggio naturale (Text-to-SQL). Questo progetto utilizza Large Language Models in locale sfruttando **Ollama** e tecniche di **RAG (Retrieval-Augmented Generation)** per produrre query SQL accurate partendo da semplici domande in linguaggio umano. Restituisce esclusivamente query in lettura (`SELECT`).
+Repository per interrogare database con linguaggio naturale usando Ollama in locale.
 
----
+Il progetto contiene due varianti indipendenti:
 
-## 🌟 Caratteristiche Principali
+- Versione 1: pipeline MySQL/Northwind (moduli originali: `api.py`, `ask.py`)
+- Versione 2: pipeline SQLite con selezione/upload DB da UI (moduli: `api2.py`, `ask2.py`)
 
-- **LLM in Locale via API**: Utilizza Ollama garantendo la totale privacy del DB.
-- **RAG & Vector Embeddings**: Recupera pattern SQL analoghi da un repository in memoria/disco sfruttando la similarità coseno (`SentenceTransformers`).
-- **Schema Auto-iniettato**: Connessione dinamica e on-the-fly tramite adapter Python che passa all'LLM nomi di tabelle, foreign keys e perfino una riga di 'Sample Data' reale per evitare allucinazioni sulle stringhe.
-- **Guardrail Semantici & AutoFix**: Pipeline a più livelli. Se il sistema sbaglia alias, l'ordinamento (`ORDER BY`) o le query falliscono, corregge automaticamente e internamente la query prima di mandarla in output all'utente.
-- **Architettura Modulare**: Utilizzabile come web application oppure nel terminale.
+Entrambe generano solo query di lettura (`SELECT`) e usano RAG su pool locale.
+
+## HomePage
+
+![Homepage](Image/Homepage.png)
 
 
 
-## 🛠️ Prerequisiti
+## Panoramica Rapida
 
-- **Python 3.10+**
-- **Ollama Server** con il modello scelto in `app/core/config.py` (default: `qwen2.5-coder`) in esecuzione su `http://localhost:11434`
-- **Database MySQL** accessibile e popolato con lo schema Northwind
+| Variante | Entry point web | Entry point CLI | Database |
+|---|---|---|---|
+| V1 | `python app/api.py` | `python app/services/ask.py` | MySQL (Northwind) |
+| V2 | `python app/api2.py` | `python app/services/ask2.py` | SQLite (file `.db/.sqlite/.sqlite3`) |
 
-### Dipendenze Python
+UI web (entrambe): `http://localhost:8000`
+
+## Prerequisiti Comuni
+
+- Python 3.10+
+- Ollama installato e attivo su `http://localhost:11434`
+- Modello disponibile: `qwen2.5-coder`
+
+Installa dipendenze:
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
-
-## 🏎️ Come Iniziare (Setup Locale senza Docker)
-
-### Passo 1 — Preparare il Database
-
-Prima di avviare l'applicazione, è necessario creare e popolare il database MySQL con i dati sintetici Northwind. Nella cartella `init_db/` sono presenti due script SQL da eseguire **in ordine**:
+Avvia Ollama (in un terminale separato):
 
 ```bash
-# 1. Crea il database
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS northwind;"
-
-# 2. Importa lo schema (tabelle, relazioni, vincoli)
-mysql -u root -p northwind < init_db/01-northwind.sql
-
-# 3. Importa i dati sintetici
-mysql -u root -p northwind < init_db/02-northwind-data.sql
-```
-
-
-### Passo 2 — Avviare Ollama
-
-Assicurati che il server Ollama sia attivo e che il modello sia stato scaricato:
-
-```bash
-# Avvia Ollama (se non è già in esecuzione)
 ollama serve
-
-# Scarica il modello (solo la prima volta)
 ollama pull qwen2.5-coder
 ```
 
-### Passo 3 — Avviare l'Applicazione
+## Versione 1 (MySQL / Northwind)
 
-Scegli la modalità che preferisci:
+### 1) Prepara il DB MySQL
 
-#### Metodo 1: Interfaccia Web (FastAPI)
+Esegui gli script in ordine:
 
 ```bash
-# Dalla radice del progetto
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS northwind;"
+mysql -u root -p northwind < init_db/01-northwind.sql
+mysql -u root -p northwind < init_db/02-northwind-data.sql
+```
+
+### 2) Configura variabili ambiente (consigliato)
+
+La V1 usa `app/core/config.py`.
+
+```bash
+set DB_HOST=localhost
+set DB_USER=root
+set DB_PASSWORD=la_tua_password
+set DB_NAME=northwind
+set OLLAMA_URL=http://localhost:11434/api/generate
+```
+
+Nota: se `DB_PASSWORD` non è impostata, la V1 richiede input password da terminale (`getpass`).
+
+### 3) Avvio V1
+
+Web API + UI:
+
+```bash
 python app/api.py
 ```
 
-> Il front-end sarà disponibile su [http://localhost:8000](http://localhost:8000).
-
-#### Metodo 2: CLI Interattiva da Terminale
+CLI interattiva:
 
 ```bash
-# Dalla radice del progetto
 python app/services/ask.py
 ```
 
-Da qui puoi digitare domande in linguaggio naturale. Al termine di ogni query corretta, il sistema ti propone di **salvare l'esempio nel Vector Pool (RAG)** per migliorare le risposte future.
+## Versione 2 (SQLite dinamico)
 
----
+La V2 usa `app/core/config2.py` e non richiede MySQL.
 
-## ⚠️ [SCONSIGLIATO] Architettura ed Esecuzione con Docker Compose 🐳
+### 1) Avvio V2
 
-Se non vuoi avviare manualmente i servizi, installare `MySQL`, `Ollama` e le librerie Python in locale, puoi utilizzare **Docker Compose**. Questa soluzione crea un ambiente riproducibile, isolato e pronto all'uso connettendo automaticamente tutti i componenti necessari.
+Web API + UI:
 
-L'infrastruttura Docker è composta da **4 servizi (container)** orchestrati:
-
-1. **`db` (MySQL 8.0)**: 
-   - Espone la porta **3307** (`localhost:3307`) per evitare conflitti con eventuali database locali già in esecuzione sulla classica 3306.
-   - Popola automaticamente il database al primo avvio eseguendo gli script `.sql` posizionati nella cartella `init_db/`.
-   - Utilizza un volume dedicato (`mysql_data`) per rendere i dati del database Northwind persistenti tra un riavvio e l'altro.
-
-2. **`ollama` (Server LLM Locale)**:
-   - Espone la porta **11434**. È il motore AI che eseguirà in locale le richieste di Text-to-SQL garantendo la privacy dei tuoi dati.
-   - Usa un volume (`ollama_data`) per mantenere i pesi del modello salvati su memoria persistente (non dovrai riscaricarli ad ogni avvio).
-
-3. **`ollama-pull-model` (Inizializzatore LLM)**:
-   - Container ausiliario "usa-e-getta". Dopo l'avvio del server Ollama, questo container si accende per **scaricare automaticamente e silenziosamente** il modello scelto (di default `qwen2.5-coder`). Al termine del download, si spegne.
-
-4. **`app` (FastAPI Backend + Frontend)**:
-   - Il cuore del progetto: il backend server Python che contatta il db e Ollama. 
-   - Implementa logiche di retry e attesa: aspetta che il database sia *healthy* (pronto a ricevere query) e che Ollama sia online.
-   - Serve l'interfaccia utente raggiungibile tramite browser.
-   - Espone tutto sulla porta **8000**.
-
-### 🚀 Come Avviare il Progetto con Docker
-
-1. Assicurati di aver inserito il file di esportazione `.sql` (il dump dei dati, es. `northwind.sql`) nella cartella `init_db/`. Le tabelle verranno importate in automatico.
-2. Da terminale, sempre posizionandoti nella radice del progetto, esegui:
 ```bash
-docker-compose up --build
+python app/api2.py
 ```
-3. Vai nell'interfaccia! Naviga su: [http://localhost:8000](http://localhost:8000)
 
-> ⏱️ **Nota Iniziale:** Al primissimo avvio ci vorranno alcuni minuti extra (soprattutto in base alla connessione a internet) necessari a Docker per scaricare le immagini di MySQL, Ollama e soprattutto per far estrarre dal container `ollama-pull-model` l'LLM (`qwen2.5-coder` pre-impostato, circa 4.5 GB).
+CLI interattiva:
 
----
+```bash
+python app/services/ask2.py
+```
 
-## Dashboard Grafana: Query Riuscite vs Fallite
+### 2) Selezione database nella V2
 
-La nuova versione registra eventi in tabella MySQL `query_events` (script `init_db/03-query-events.sql`) quando:
+- Da UI (`/`): carica un file SQLite oppure imposta path DB
+- Endpoint disponibili:
+  - `POST /api/set-db` con body JSON `{ "db_path": "percorso/al/file.sqlite" }`
+  - `POST /api/upload-db` (upload binario del file)
 
-- chiami `/api/ask` (`event_type = 'ask'`)
-- salvi feedback da UI (`event_type = 'feedback'`)
+Estensioni file supportate upload: `.sqlite`, `.sqlite3`
 
-### 1) Avvio servizi
+Nota: se non trovi un Dataset iniziale valido, la V2 parte comunque, ma richiede configurazione Dataset dalla UI prima di eseguire domande.
 
-Con Docker Compose è incluso anche Grafana:
+## Endpoint principali (entrambe le versioni)
+
+- `GET /api/health` stato servizio
+- `POST /api/ask` domanda NL -> SQL + risultati
+- `POST /api/save` feedback utente (query corretta/non corretta)
+- `GET /api/pool` elenco esempi RAG
+- `POST /api/pool/execute` esegue query `SELECT` dal pool
+
+## Docker
+
+Nel repository sono presenti due compose:
+
+- `docker-compose.yml`: stack V2 (SQLite) + Ollama
+- `docker-compose2.yml`: stack V1 (MySQL Northwind) + Ollama
+
+Avvio V2:
 
 ```bash
 docker-compose up --build
 ```
 
-Grafana sarà disponibile su [http://localhost:3000](http://localhost:3000) con credenziali iniziali:
+Avvio V1:
 
-- user: `admin`
-- password: `admin`
-
-### 2) Data source MySQL in Grafana
-
-In Grafana aggiungi Data Source MySQL con:
-
-- Host: `db:3306`
-- Database: `northwind`
-- User: `root`
-- Password: valore di `DB_PASSWORD` (default `root`)
-
-### 3) Query pannello Time Series (success/fail nel tempo)
-
-```sql
-SELECT
-   UNIX_TIMESTAMP(DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00')) AS time,
-   SUM(CASE WHEN is_success = 1 THEN 1 ELSE 0 END) AS succeeded,
-   SUM(CASE WHEN is_success = 0 THEN 1 ELSE 0 END) AS failed
-FROM query_events
-WHERE $__timeFilter(created_at)
-   AND event_type = 'ask'
-GROUP BY 1
-ORDER BY 1;
+```bash
+docker-compose -f docker-compose2.yml up --build
 ```
 
-### 4) Query pannello Pie Chart (totale success/fail)
+Servizi:
 
-```sql
-SELECT
-   CASE WHEN is_success = 1 THEN 'Riuscite' ELSE 'Fallite' END AS metric,
-   COUNT(*) AS value
-FROM query_events
-WHERE event_type = 'ask'
-GROUP BY is_success;
-```
+- App: `http://localhost:8000`
+- Ollama API: `http://localhost:11434`
+- MySQL (solo V1): `localhost:3307`
 
-### Nota importante
+## Differenze funzionali V1 vs V2
 
-Se il volume MySQL esiste già, i nuovi script in `init_db/` non vengono rieseguiti automaticamente. In quel caso crea la tabella manualmente:
+- V1: schema fisso Northwind su MySQL
+- V2: schema variabile, scelto dall'utente su SQLite
 
-```sql
-SOURCE /docker-entrypoint-initdb.d/03-query-events.sql;
-```
+

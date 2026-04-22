@@ -20,8 +20,8 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
-from app.services.retriever2 import SPSRetriever
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
+from app.services.retriever2 import Retriever
+from app.services.schema_adapter2 import SchemaAdapter
 from app.services.ask2 import process_question
 
 class QueryRequest(BaseModel):
@@ -109,7 +109,7 @@ def _load_database(db_path: str, db_name: str | None = None):
     if not os.path.exists(resolved_path):
         raise FileNotFoundError(f"File SQLite non trovato: {resolved_path}")
 
-    adapter = NorthwindSchemaAdapter(sqlite_path=resolved_path)
+    adapter = SchemaAdapter(sqlite_path=resolved_path)
     schema_data = adapter.extract_schema()
     schema_text = adapter.schema_to_text(schema_data)
     valid_tables = schema_data["valid_tables"]
@@ -132,7 +132,7 @@ def _load_database(db_path: str, db_name: str | None = None):
 async def lifespan(app: FastAPI):
     print("\n⏳ Inizializzazione moduli SPS-SQL (Retriever)...")
     try:
-        retriever = SPSRetriever()
+        retriever = Retriever()
         app_state["retriever"] = retriever
         app_state["ready"] = True
 

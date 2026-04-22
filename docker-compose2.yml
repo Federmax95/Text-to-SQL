@@ -3,17 +3,16 @@ version: '3.8'
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: northwind-ollama
     restart: always
     ports:
       - "11434:11434"
     volumes:
       # Il volume persisterà i modelli scaricati
       - ollama_data:/root/.ollama
+
   # Container ausiliario "usa-e-getta" per scaricare automaticamente il modello LLM ai primi avvii
   ollama-pull-model:
     image: ollama/ollama:latest
-    container_name: northwind-ollama-pull
     restart: "no"
     depends_on:
       - ollama
@@ -22,30 +21,41 @@ services:
     entrypoint: /bin/sh
     command: -c "sleep 10 && ollama pull qwen2.5-coder && echo 'Modello qwen scaricato con successo!'"
 
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=northwind
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init_db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   app:
     build: .
-    container_name: northwind-app
     restart: always
     ports:
       - "8000:8000"
     environment:
       - OLLAMA_URL=http://ollama:11434/api/generate
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=northwind
+    command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
+      db:
+        condition: service_healthy
       ollama:
         condition: service_started
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: northwind-grafana
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-
 volumes:
   ollama_data:
-  grafana_data:
+  mysql_data:

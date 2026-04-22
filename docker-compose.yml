@@ -3,7 +3,6 @@ version: '3.8'
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: northwind-ollama
     restart: always
     ports:
       - "11434:11434"
@@ -13,7 +12,6 @@ services:
   # Container ausiliario "usa-e-getta" per scaricare automaticamente il modello LLM ai primi avvii
   ollama-pull-model:
     image: ollama/ollama:latest
-    container_name: northwind-ollama-pull
     restart: "no"
     depends_on:
       - ollama
@@ -24,7 +22,6 @@ services:
 
   app:
     build: .
-    container_name: northwind-app
     restart: always
     ports:
       - "8000:8000"
@@ -37,18 +34,6 @@ services:
     volumes:
       - ./data/uploaded_dbs:/app/data/uploaded_dbs
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: northwind-grafana
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
 
 volumes:
   ollama_data:
-  grafana_data:
