@@ -8,8 +8,8 @@ Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
 
-from app.services.schema_adapter2 import NorthwindSchemaAdapter
-from app.services.retriever2 import SPSRetriever
+from app.services.schema_adapter2 import SchemaAdapter
+from app.services.retriever2 import Retriever
 from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
 import time
 from sqlglot import exp
@@ -368,8 +368,7 @@ def execute_query(query: str, adapter: NorthwindSchemaAdapter) -> dict:
         with adapter._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query)
-            cols = [desc[0]
-                    for desc in cursor.description] if cursor.description else []
+            cols = [desc[0] for desc in cursor.description] if cursor.description else []
             data = cursor.fetchall()
             return {"success": True, "columns": cols, "data": data}
     except Exception as e:
@@ -385,8 +384,7 @@ def format_results(result: dict, max_rows: int = 25) -> str:
     data = result["data"][:max_rows]
     json_data = []
     for row in data:
-        row_dict = {cols[i]: str(
-            val) if val is not None else None for i, val in enumerate(row)}
+        row_dict = {cols[i]: str(val) if val is not None else None for i, val in enumerate(row)}
         json_data.append(row_dict)
     out_json = json.dumps(json_data, indent=2, ensure_ascii=False)
     return out_json
@@ -417,12 +415,10 @@ def ask_db_path() -> str:
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: SPSRetriever, adapter: NorthwindSchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None,) -> dict:
+def process_question(q: str, retriever: SPSRetriever, adapter: SchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None,) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
     def notify_progress(step: str, message: str = ""):
-        print(step, message)
         if progress_callback:
-            print(progress_callback)
             progress_callback(step, message)
 
     augmented_question = q
@@ -568,13 +564,12 @@ def interactive_loop():
 
     print("\n[inizializzazione in corso... attendere]")
     try:
-        retriever = SPSRetriever()
+        retriever = Retriever()
         sqlite_path = ask_db_path()
-        print(sqlite_path)
         if not os.path.exists(sqlite_path):
             print(f"❌ File SQLite non trovato: {sqlite_path}")
             return
-        adapter = NorthwindSchemaAdapter(sqlite_path=sqlite_path)
+        adapter = SchemaAdapter(sqlite_path=sqlite_path)
         schema_data = adapter.extract_schema()
         schema_text = adapter.schema_to_text(schema_data)
         valid_tables = schema_data["valid_tables"]

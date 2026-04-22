@@ -10,11 +10,10 @@ import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from app.core.config2 import (
-    POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL, TOP_K)
+from app.core.config2 import (POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL, TOP_K)
 
 
-class SPSRetriever:
+class Retriever:
     """Retriever per trovare le domande SQL più simili nel pool."""
 
     def __init__(self):
@@ -29,8 +28,7 @@ class SPSRetriever:
             self.embeddings = np.load(POOL_EMBEDDINGS_PATH)
             with open(POOL_DATA_PATH, "r", encoding="utf-8") as f:
                 self.pool_data = json.load(f)
-            print(
-                f"  ✅ Retriever pronto: {len(self.pool_data)} esempi nel pool")
+            print(f"  ✅ Retriever pronto: {len(self.pool_data)} esempi nel pool")
         else:
             print("  ⚠️  Pool RAG non trovato. Il retriever userà un pool vuoto.")
             embedding_dim = self.model.get_sentence_embedding_dimension()
@@ -115,13 +113,10 @@ class SPSRetriever:
         normalized_question = self._normalize_text(question)
         normalized_query = self._normalize_text(query)
         for item in self.pool_data:
-            same_question = self._normalize_text(
-                item.get("question", "")) == normalized_question
-            same_query = self._normalize_text(
-                item.get("query", "")) == normalized_query
+            same_question = self._normalize_text(item.get("question", "")) == normalized_question
+            same_query = self._normalize_text(item.get("query", "")) == normalized_query
             same_db = item.get("db_id", "northwind") == db_id
-            same_quality = bool(item.get("is_correct", True)
-                                ) == bool(is_correct)
+            same_quality = bool(item.get("is_correct", True)) == bool(is_correct)
             if same_question and same_query and same_db and same_quality:
                 return True
         return False
