@@ -150,4 +150,193 @@ Servizi:
 - V1: schema fisso Northwind su MySQL
 - V2: schema variabile, scelto dall'utente su SQLite
 
+# Esempio di Flusso Completo
+
+> **Input:** *"How many different venues hosted more than 2 games?"*
+
+---
+
+## Pipeline a 8 Stadi
+
+```
+Domanda utente
+      │
+      ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  1. RAG     │───▶│  2. CoT     │───▶│  3. Cols    │───▶│  4. SQL Gen │
+│  Retrieval  │    │  Reasoning  │    │  Selection  │    │  Generation │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+                                                                 │
+      ┌──────────────────────────────────────────────────────────┘
+      ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  5. Guard   │───▶│  6. Syntax  │───▶│  7. Execute │───▶│  8. Output  │
+│  Semantico  │    │  Validation │    │  Su DB      │    │  Risultati  │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+```
+
+---
+
+## Stadio 1 — RAG (Retrieval-Augmented Generation)
+
+Il sistema cerca nel **Vector DB** esempi strutturalmente simili alla domanda.
+
+| Parametro       | Valore                                    |
+|-----------------|-------------------------------------------|
+| Query           | `"How many different venues hosted..."` |
+| Pattern trovati | Esempi con `COUNT` / `DISTINCT`           |
+| Similarità      | `0.73`           |
+| Utilizzo        | Guida strutturale per i passi successivi  |
+
+```
+Esempio recuperato dal pool:
+  Q:   "How many different teams played at home?"
+  SQL: SELECT COUNT(DISTINCT home_team) FROM matches
+```
+
+---
+
+## Stadio 2 — Chain-of-Thought Reasoning
+
+Il modello **ragiona prima di scrivere SQL**, seguendo passi strutturati.
+
+```
+TABLES:      games
+JOINS:       NONE
+FILTERS:     COUNT(*) > 2  (più di 2 partite ospitate)
+AGGREGATION: COUNT(DISTINCT venue)
+OUTPUT_COLS: nessuna colonna raw — solo il conteggio aggregato
+NOTES:       "different" → richiede DISTINCT
+             "more than" → operatore >
+```
+
+> 💡 Il CoT evita l'errore più comune: confondere le colonne da **restituire** con quelle da **filtrare**.
+
+---
+
+## Stadio 3 — Column Selection
+
+Vengono identificate le **sole colonne necessarie**, validate contro lo schema reale.
+
+```
+Colonne candidate dall'LLM:
+  games.venue       ✅  esiste nello schema
+  games.venue_id    ❌  scartata — non necessaria
+  venue             ❌  scartata — manca il prefisso tabella
+```
+
+**Colonne approvate:** `games.venue`
+
+---
+
+## Stadio 4 — SQL Generation
+
+Il modello genera la query usando **solo le colonne nella whitelist**.
+
+```sql
+SELECT COUNT(DISTINCT venue)
+FROM games
+GROUP BY venue
+HAVING COUNT(*) > 2
+```
+
+> Le regole dinamiche attivate per questa domanda:
+> - `is_aggregation` → usa `COUNT(*)`
+> - `is_distinct` → usa `COUNT(DISTINCT col)`
+> - `is_comparative` → mappa *"more than"* → operatore `>`
+
+---
+
+## Stadio 5 — Semantic Guard
+
+Controlli semantici **prima dell'esecuzione**, per bloccare errori logici evidenti.
+
+| Check                                    | Risultato |
+|------------------------------------------|-----------|
+| `"different"` → `COUNT(DISTINCT)` presente | ✅        |
+| `"more than"` → operatore `>` presente    | ✅        |
+| `"how many"` → `COUNT()` presente         | ✅        |
+| `GROUP BY` senza funzioni aggregate       | ✅        |
+| Alias non definiti in `ORDER BY`          | ✅        |
+
+**Nessun problema rilevato** — si procede alla validazione sintattica.
+
+---
+
+## Stadio 6 — Syntax Validation
+
+Il parser **sqlglot** analizza la query generata.
+
+```
+✅ Statement singolo rilevato
+✅ Operazione di tipo SELECT (lettura) — non INSERT/UPDATE/DELETE
+✅ Tabella "games" presente nella whitelist
+✅ Sintassi SQLite valida
+→ Query sicura e autorizzata all'esecuzione
+```
+
+---
+
+## Stadio 7 — Esecuzione su DB SQLite
+
+La query viene eseguita sul database reale.
+
+```sql
+-- Query eseguita:
+SELECT COUNT(DISTINCT venue)
+FROM games
+GROUP BY venue
+HAVING COUNT(*) > 2
+```
+
+```json
+// Risposta grezza dal DB:
+{
+  "success": true,
+  "columns": ["COUNT(DISTINCT venue)"],
+  "data": [[5]]
+}
+```
+
+---
+
+## Stadio 8 — Output Formattato
+
+Il risultato viene serializzato in JSON e restituito all'utente.
+
+```json
+[
+  {
+    "COUNT(DISTINCT venue)": "5"
+  }
+]
+```
+
+**Risposta finale:** *5 venues diversi hanno ospitato più di 2 partite.*
+
+---
+
+## Riepilogo del Flusso
+
+```
+Input  → "How many different venues hosted more than 2 games?"
+
+RAG    → pattern COUNT/DISTINCT recuperato (sim: 0.73)
+CoT    → TABLES: games | AGGREGATION: COUNT(DISTINCT) | FILTER: > 2
+Cols   → games.venue  ✅
+SQL    → SELECT COUNT(DISTINCT venue) FROM games
+         GROUP BY venue HAVING COUNT(*) > 2
+Guard  → tutti i check superati ✅
+Syntax → SELECT valido, tabella autorizzata ✅
+Execute→ [[5]]
+Output → [{"COUNT(DISTINCT venue)": "5"}]
+```
+
+> ✅ **Nessun tentativo di fix necessario** — query corretta al primo tentativo.
+
+---
+
+*Generato dal sistema Text-to-SQL — pipeline RAG + CoT + AutoFix*
+
+
 

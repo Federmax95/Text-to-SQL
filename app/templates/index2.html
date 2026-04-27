@@ -164,7 +164,11 @@
         </div>
 
         <div class="card p-4 shadow-sm">
-            <div class="reasoning-toggle-row" data-hide-on-generate>
+            <div class="reasoning-toggle-row d-flex justify-content-between" data-hide-on-generate>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="baseline-toggle">
+                    <label class="form-check-label" for="baseline-toggle">Usa Baseline</label>
+                </div>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="reasoning-toggle" checked>
                     <label class="form-check-label" for="reasoning-toggle">Mostra Step</label>
@@ -174,6 +178,16 @@
             <div class="input-group mb-3" data-hide-on-generate>
                 <input type="text" id="question" class="form-control" placeholder="Inserisci la tua domanda...">
                 <button class="btn btn-primary" onclick="sendQuery()">Invia</button>
+            </div>
+
+            <div class="mb-4" data-hide-on-generate>
+                <select class="form-select form-select-sm" id="example-select" onchange="handleExampleSelection(this)">
+                    <option value="" selected disabled>Examples</option>
+                    <option value="Quanti giocatori ci sono in totale?">Quanti giocatori ci sono?</option>
+                    <option value="Quali sono i nomi dei giocatori che battono con la mano sinistra?">Giocatori mancini?</option>
+                    <option value="Quale squadra ha avuto la più alta affluenza?">Squadra con più affluenza?</option>
+                    <option value="Mostra lo stipendio medio dei giocatori della American League (AL).">Stipendio medio in AL?</option>
+                </select>
             </div>
 
             <div id="loader" class="text-center loading">
@@ -235,6 +249,38 @@
 
         function setGenerationMode(isGenerating) {
             document.body.classList.toggle('generating', isGenerating);
+        }
+
+        async function handleExampleSelection(selectElement) {
+            const text = selectElement.value;
+            if (text) {
+                document.getElementById('question').value = text;
+                
+                // Autocaricamento del dataset di esempio
+                const dbStatus = document.getElementById('db-status');
+                dbStatus.textContent = 'Caricamento database di esempio...';
+                dbStatus.className = 'small text-muted';
+                try {
+                    const res = await fetch('/api/set-db', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({db_path: 'spider_data/database/baseball_1/baseball_1.sqlite'})
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        dbStatus.textContent = `Connesso: ${data.db_name} (${data.tables} tabelle)`;
+                        dbStatus.className = 'small text-success';
+                    } else {
+                        dbStatus.textContent = 'Errore caricamento DB di esempio.';
+                        dbStatus.className = 'small text-danger';
+                    }
+                } catch(e) {
+                    console.error("Errore autocaricamento DB di esempio", e);
+                }
+
+                sendQuery(); 
+                selectElement.value = ""; // Reset visualmente a "Examples"
+            }
         }
 
         function setupFeedbackHandlers() {
@@ -326,11 +372,19 @@
         function resetProgressSteps() {
             const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
             const icons = ['⏳', '🧠', '🔍', '✨'];
+            const useBaseline = document.getElementById('baseline-toggle') ? document.getElementById('baseline-toggle').checked : false;
 
             steps.forEach((stepId, index) => {
                 const element = document.getElementById(stepId);
                 if (element) {
-                    element.className = 'progress-item' + (index === 0 ? ' active' : ' pending');
+                    if (useBaseline && stepId !== 'step-4') {
+                        element.style.display = 'none';
+                        element.className = 'progress-item pending';
+                    } else {
+                        element.style.display = 'flex';
+                        const isActive = useBaseline ? (stepId === 'step-4') : (index === 0);
+                        element.className = 'progress-item' + (isActive ? ' active' : ' pending');
+                    }
                     const icon = element.querySelector('.progress-icon');
                     if (icon) {
                         icon.textContent = icons[index];
@@ -449,10 +503,11 @@
             startProgressListener(sessionId);
 
             try {
+                const useBaseline = document.getElementById('baseline-toggle').checked;
                 const response = await fetch('/api/ask', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({question: currentQuestion, session_id: sessionId})
+                    body: JSON.stringify({question: currentQuestion, session_id: sessionId, use_baseline: useBaseline})
                 });
                 const res = await response.json();
 
@@ -564,6 +619,7 @@
             startProgressListener(sessionId);
 
             try {
+                const useBaseline = document.getElementById('baseline-toggle').checked;
                 const response = await fetch('/api/ask', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -571,7 +627,8 @@
                         question: currentQuestion,
                         session_id: sessionId,
                         previous_sql: currentSql,
-                        user_feedback: feedback
+                        user_feedback: feedback,
+                        use_baseline: useBaseline
                     })
                 });
                 const res = await response.json();

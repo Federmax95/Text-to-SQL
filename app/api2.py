@@ -29,6 +29,7 @@ class QueryRequest(BaseModel):
     session_id: str | None = None
     previous_sql: str | None = None
     user_feedback: str | None = None
+    use_baseline: bool = False
 
 
 class SaveRequest(BaseModel):
@@ -309,8 +310,7 @@ async def ask_question(request: QueryRequest):
             status_code=400, detail="La domanda non può essere vuota.")
 
     session_id = request.session_id or str(uuid.uuid4())
-    progress_state[session_id] = {
-        "step": "start", "message": "Inizio elaborazione", "timestamp": 0}
+    progress_state[session_id] = {"step": "start", "message": "Inizio elaborazione", "timestamp": 0}
 
     res = await run_in_threadpool(
         process_question,
@@ -324,6 +324,7 @@ async def ask_question(request: QueryRequest):
         previous_sql=request.previous_sql,
         user_feedback=request.user_feedback,
         current_db_id=app_state.get("db_id"),
+        use_baseline=request.use_baseline,
     )
 
     if session_id in progress_state:
