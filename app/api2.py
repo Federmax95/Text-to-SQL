@@ -30,7 +30,7 @@ class QueryRequest(BaseModel):
     previous_sql: str | None = None
     user_feedback: str | None = None
     use_baseline: bool = False
-
+    llm_model: str | None = None
 
 class SaveRequest(BaseModel):
     question: str
@@ -325,6 +325,7 @@ async def ask_question(request: QueryRequest):
         user_feedback=request.user_feedback,
         current_db_id=app_state.get("db_id"),
         use_baseline=request.use_baseline,
+        llm_model=request.llm_model,
     )
 
     if session_id in progress_state:

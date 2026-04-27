@@ -164,14 +164,28 @@
         </div>
 
         <div class="card p-4 shadow-sm">
-            <div class="reasoning-toggle-row d-flex justify-content-between" data-hide-on-generate>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="baseline-toggle">
-                    <label class="form-check-label" for="baseline-toggle">Usa Baseline</label>
+            <div class="reasoning-toggle-row d-flex justify-content-between align-items-center mb-3" data-hide-on-generate>
+                <div class="d-flex gap-3">
+                    <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="baseline-toggle">
+                        <label class="form-check-label" for="baseline-toggle">Usa Baseline</label>
+                    </div>
+                    <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="reasoning-toggle" checked>
+                        <label class="form-check-label" for="reasoning-toggle">Mostra Step</label>
+                    </div>
                 </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="reasoning-toggle" checked>
-                    <label class="form-check-label" for="reasoning-toggle">Mostra Step</label>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="text-muted small mb-0 text-nowrap">Modello:</label>
+                    <select class="form-select form-select-sm" id="llm-model-select" style="width: auto;">
+                        <option value="cogito:8b" selected>cogito:8b</option>
+                        <option value="qwen2.5-coder:latest">qwen2.5-coder:latest</option>
+                        <option value="qwen2.5-coder:3B">qwen2.5-coder:3B</option>
+                        <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
+                        <option value="qwen3.5:9b">qwen3.5:9b</option>
+                        <option value="gemma4:e4b">gemma4:e4b</option>
+                        <option value="qwen2.5:3B">qwen2.5:3B</option>
+                    </select>
                 </div>
             </div>
 
@@ -504,10 +518,16 @@
 
             try {
                 const useBaseline = document.getElementById('baseline-toggle').checked;
+                const llmModel = document.getElementById('llm-model-select').value;
                 const response = await fetch('/api/ask', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({question: currentQuestion, session_id: sessionId, use_baseline: useBaseline})
+                    body: JSON.stringify({
+                        question: currentQuestion, 
+                        session_id: sessionId, 
+                        use_baseline: useBaseline,
+                        llm_model: llmModel
+                    })
                 });
                 const res = await response.json();
 
@@ -620,6 +640,7 @@
 
             try {
                 const useBaseline = document.getElementById('baseline-toggle').checked;
+                const llmModel = document.getElementById('llm-model-select').value;
                 const response = await fetch('/api/ask', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -628,7 +649,8 @@
                         session_id: sessionId,
                         previous_sql: currentSql,
                         user_feedback: feedback,
-                        use_baseline: useBaseline
+                        use_baseline: useBaseline,
+                        llm_model: llmModel
                     })
                 });
                 const res = await response.json();

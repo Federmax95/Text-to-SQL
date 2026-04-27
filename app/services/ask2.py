@@ -36,18 +36,19 @@ DEBUG = False  # True per stampare dettagli di debug, False per produzione
 # Funzione per chiamare l'api di ollama
 
 
-def call_ollama(prompt: str, retries=5) -> str:
+def call_ollama(prompt: str, retries=5, model=None) -> str:
 
     """Chiama l'API REST locale di Ollama con backoff esponenziale:
     attende 1s, 2s, 4s, 8s, 16s tra i tentativi
     Gestisce timeout, errori di connessione e risposte malformate"""
 
     last_error = None
+    target_model = model or LLM_MODEL
     for attempt in range(retries):
         try:
             response = requests.post(
                 OLLAMA_URL,
-                json={"model": LLM_MODEL, "prompt": prompt, "stream": False},
+                json={"model": target_model, "prompt": prompt, "stream": False},
                 timeout=120
             )
             response.raise_for_status()
@@ -492,7 +493,7 @@ def ask_db_path() -> str:
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None, Benchmark: bool | None = None, use_baseline: bool = False) -> dict:
+def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None, Benchmark: bool | None = None, use_baseline: bool = False, llm_model: str | None = None) -> dict:
     """Core logic per ottenere la answer sia dalla CLI che dalle API."""
     def notify_progress(step: str, message: str = ""):
         if progress_callback:
@@ -515,7 +516,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         print("⏳ Generazione Query Target (Baseline)...")
         p_sql = build_baseline_prompt(augmented_question, schema_text)
         try:
-            sql = clean_sql(call_ollama(p_sql))
+            sql = clean_sql(call_ollama(p_sql, model=llm_model))
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
     else:
@@ -546,7 +547,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         print("🧠 Ragionamento in corso...")
         try:
             cot_prompt = build_cot_prompt(augmented_question, schema_text)
-            reasoning = call_ollama(cot_prompt)
+            reasoning = call_ollama(cot_prompt, model=llm_model)
             reasoning = reasoning.strip()
             if DEBUG:
                 print(f"   💭 {reasoning[:200]}")
@@ -559,7 +560,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         print("⏳ Identificazione colonne strettamente necessarie...")
         try:
             p_cols = build_columns_prompt(augmented_question, schema_text, sim_context, reasoning)
-            cols_raw = call_ollama(p_cols)
+            cols_raw = call_ollama(p_cols, model=llm_model)
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
         if(valid_tables and valid_columns):
@@ -579,16 +580,19 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
             p_sql = build_sql_prompt("\n".join(cols_raw), augmented_question, schema_text, sim_context, reasoning)
         
         try:
-            sql = clean_sql(call_ollama(p_sql))
+            sql = clean_sql(call_ollama(p_sql, model=llm_model))
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
 
-    # ── Pre-validation check ──
-    pre_check_error = semantic_guard(sql, augmented_question)
-    if pre_check_error:
-        print(f"   🔴 Pre-check: {pre_check_error[:80]}...")
+    if use_baseline:
+        max_attempts = 1
+    else:
+        # ── Pre-validation check ──
+        pre_check_error = semantic_guard(sql, augmented_question)
+        if pre_check_error:
+            print(f"   🔴 Pre-check: {pre_check_error[:80]}...")
+        max_attempts = 6
 
-    max_attempts = 6
     for attempt in range(1, max_attempts + 1):
         # 1. Validazione sintattica (sqlglot)
         # 2. Semantic guard
@@ -608,11 +612,12 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
             return {"success": False, "error": validation_err, "sql": sql}
 
         # ── Semantic guard pre-fix ──
-        sem_err = semantic_guard(sql, augmented_question)
-        if sem_err and attempt < max_attempts:
-            print(f"   ⚠️ Semantic guard: {sem_err}")
-            sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err, explanation=sem_err,schema_text=schema_text, question=augmented_question, reasoning=reasoning,)))
-            continue
+        if not use_baseline:
+            sem_err = semantic_guard(sql, augmented_question)
+            if sem_err and attempt < max_attempts:
+                print(f"   ⚠️ Semantic guard: {sem_err}")
+                sql = clean_sql(call_ollama(build_fix_prompt(query=sql, error=sem_err, explanation=sem_err,schema_text=schema_text, question=augmented_question, reasoning=reasoning,), model=llm_model))
+                continue
 
         # ── Execution ──
 
@@ -627,11 +632,13 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                 print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
                 if attempt < max_attempts:
                     explain = call_ollama(build_explain_prompt(
-                        sql, err, augmented_question, schema_text))
+                        sql, err, augmented_question, schema_text), model=llm_model)
                     if DEBUG:
                         print(f"   💡 Diagnosi: {explain[:100]}...")
                     p_fix = build_fix_prompt(sql, err, explain, schema_text, question=augmented_question, reasoning=reasoning)
-                    sql = clean_sql(call_ollama(p_fix))
+                    sql = clean_sql(call_ollama(p_fix, model=llm_model))
+                else:
+                    return {"success": False, "error": err, "sql": sql}
         else:
             return {"sql": sql}
 
