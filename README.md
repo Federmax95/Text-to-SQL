@@ -11,9 +11,17 @@ Entrambe generano solo query di lettura (`SELECT`) e usano RAG su pool locale.
 
 ## Video di utilizzo
 
-[
-  ![Video di utilizzo](Video/EsempioUtilizzo.gif)
-](Video/EsempioUtilizzo.mp4)
+
+
+https://github.com/user-attachments/assets/5f8f0a35-3b8f-44ef-99ef-0225a684caab
+
+
+
+
+
+
+
+
 
 
 
