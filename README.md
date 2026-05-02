@@ -11,9 +11,11 @@ Entrambe generano solo query di lettura (`SELECT`) e usano RAG su pool locale.
 
 ## Video di utilizzo
 
-<video controls width="900" src="Video/EsempioUtilizzo.mp4">
-  Il browser non supporta il tag video. Puoi aprire il file da [Video/EsempioUtilizzo.mp4](Video/EsempioUtilizzo.mp4).
-</video>
+[
+  ![Video di utilizzo](Video/EsempioUtilizzo.gif)
+](Video/EsempioUtilizzo.mp4)
+
+Apri il video completo da [Video/EsempioUtilizzo.mp4](Video/EsempioUtilizzo.mp4).
 
 
 
