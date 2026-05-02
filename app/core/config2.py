@@ -6,7 +6,7 @@ APP_DIR = os.path.dirname(CORE_DIR)
 PROJECT_DIR = os.path.dirname(APP_DIR)
 
 # Modello e Ollama
-LLM_MODEL = "cogito:8B"
+LLM_MODEL = "qwen2.5-coder"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 
 # Cross-Domain RAG: Puntiamo al pool locale

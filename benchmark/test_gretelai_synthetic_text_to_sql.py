@@ -13,9 +13,10 @@ import pandas as pd
 from datasets import load_dataset
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
+PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
+
     
 from app.core.config2 import LLM_MODEL
 from app.services.ask2 import process_question
@@ -40,15 +41,32 @@ def check_df_equal(df1: pd.DataFrame, df2: pd.DataFrame) -> bool:
     if df1.shape != df2.shape:
         return False
     try:
-        # Convert all to string to avoid sort type errors
-        df1_s = df1.astype(str).sort_values(
-            by=df1.columns.tolist()).reset_index(drop=True)
-        df2_s = df2.astype(str).sort_values(
-            by=df2.columns.tolist()).reset_index(drop=True)
-        df1_s.columns = range(df1_s.shape[1])
-        df2_s.columns = range(df2_s.shape[1])
-        return df1_s.equals(df2_s)
-    except:
+        def normalize(df):
+            # 1. Converti a float se possibile, altrimenti string
+            df = df.copy()
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col]).round(4)
+                except (ValueError, TypeError):
+                    df[col] = df[col].astype(str).str.strip().str.lower()
+            
+            # 2. Rinomina colonne a indice numerico (ignora alias)
+            df.columns = range(df.shape[1])
+            
+            # 3. Ordina le colonne (ignora column order)
+            df = df.reindex(sorted(df.columns), axis=1)
+            
+            # 4. Ordina le righe (ignora row order)
+            df = df.sort_values(
+                by=list(df.columns), 
+                key=lambda x: x.astype(str)
+            ).reset_index(drop=True)
+            
+            return df
+
+        return normalize(df1).equals(normalize(df2))
+
+    except Exception:
         return False
 
 

@@ -1,6 +1,6 @@
 {
   "timestamp": "2026-04-29T15:09:37.023713",
-  "model": "qwen2.5-coder",
+  "model": "qwen2.5-coder:7B",
   "method": "RAG (gretelai/synthetic_text_to_sql)",
   "total_tests": 1000,
   "baseline_accuracy": 68.9,
