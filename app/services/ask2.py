@@ -106,28 +106,6 @@ def build_baseline_prompt(question: str, schema_text: str) -> str:
             ### SQLite Query:
             """
 
-
-# def build_cot_prompt(question: str, schema_text: str) -> str:
-#     """Chain-of-Thought: ragionamento step-by-step prima di generare SQL."""
-#     return f"""You are a SQL expert. Before writing SQL, reason through the problem step-by-step.
-
-#             {schema_text}
-
-#             ### Question:
-#             {question}
-
-#             ### Step-by-step reasoning (think out loud):
-#             1. What are the main entities (tables) involved in the question?
-#             2. What are the relationships between them (which tables to JOIN)?
-#             3. What filters (WHERE conditions) apply to the question?
-#             4. Do we need aggregation (GROUP BY, COUNT, SUM)? If yes, what?
-#             5. What columns should we return? (exactly the ones asked, no extras)
-#             6. Do we need HAVING clause, DISTINCT, or LIMIT?
-#             7. What is the final output format (rows, single number, list)?
-
-#             ### Your reasoning:"""
-
-
 def build_columns_prompt(question: str, schema_text: str, similar: str = "", reasoning: str = "") -> str:
     return f"""You are a SQLite schema analyzer.
             {schema_text}
@@ -447,25 +425,11 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                 f"{previous_sql}"
             )
 
-        # ── PHASE 2: Chain-of-Thought Reasoning ──
-        # notify_progress("step-2", "Ragionamento chain-of-thought...")
-        # print("🧠 Ragionamento in corso...")
-        # try:
-        #     cot_prompt = build_cot_prompt(augmented_question, schema_text)
-        #     reasoning = call_ollama(cot_prompt, model=llm_model)
-        #     reasoning = reasoning.strip()
-        #     if DEBUG:
-        #         print(f"   💭 {reasoning[:200]}")
-        # except ConnectionError as ce:
-        #     print(f"❌ {ce}")
-        #     return {"success": False, "error": str(ce)}
-
-        # ── PHASE 3: Column Selection ──
-        notify_progress("step-3", "Identificazione colonne necessarie...")
+        # ── PHASE 2: Column Selection ──
+        notify_progress("step-2", "Identificazione colonne necessarie...")
         print("⏳ Identificazione colonne strettamente necessarie...")
         try:
-            p_cols = build_columns_prompt(
-                augmented_question, schema_text, sim_context, reasoning)
+            p_cols = build_columns_prompt(augmented_question, schema_text, sim_context, reasoning)
             cols_raw = call_ollama(p_cols, model=llm_model)
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
@@ -473,20 +437,18 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         valid_cols = validate_columns(cols_raw, valid_tables, valid_columns)
         if not valid_cols:
             if DEBUG:
-                print(
-                    "   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
+                print("   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
             valid_cols = list(valid_columns.keys())
-        # ── PHASE 4: SQL Generation ──
-        notify_progress("step-4", "Generazione query MySQL...")
+        # ── PHASE 3: SQL Generation ──
+        notify_progress("step-3", "Generazione query MySQL...")
         print("⏳ Generazione Query Target...")
-        p_sql = build_sql_prompt(
-            "\n".join(valid_cols), augmented_question, schema_text, sim_context, reasoning)
+        p_sql = build_sql_prompt("\n".join(valid_cols), augmented_question, schema_text, sim_context, reasoning)
         sql = clean_sql(call_ollama(p_sql))
 
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
             print(f"   🔄 AutoFix #{attempt - 1}...")
-            notify_progress("step-4", f"Tentativo di fix #{attempt - 1}...")
+            notify_progress("step-3", f"Tentativo di fix #{attempt - 1}...")
         if DEBUG:
             print("SQL: ", sql)
 

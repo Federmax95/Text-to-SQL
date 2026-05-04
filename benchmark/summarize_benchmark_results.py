@@ -274,6 +274,10 @@ def main() -> None:
         pdf_path = args.output
         doc = SimpleDocTemplate(str(pdf_path), pagesize=A4, rightMargin=24,
                                 leftMargin=24, topMargin=24, bottomMargin=24)
+        doc.title = "Benchmark summary"
+
+        def _set_pdf_metadata(canvas, document):
+            canvas.setTitle("Benchmark summary")
 
         # Build table data (omit file name column for PDF)
         page_width, page_height = A4
@@ -368,7 +372,7 @@ def main() -> None:
 
             summary_data.append([
                 model_name,
-                
+
                 str(baseline_wrong),
                 str(baseline_correct),
                 str(pipeline_wrong),
@@ -377,8 +381,6 @@ def main() -> None:
                 str(baseline_only_correct),
                 str(pipeline_only_correct),
             ])
-
-        
 
         rel_summary = [0.20, 0.10, 0.10, 0.10, 0.10, 0.10, 0.15, 0.15]
         col_widths_summary = [usable_width * r for r in rel_summary]
@@ -408,7 +410,7 @@ def main() -> None:
         table2.setStyle(style2)
         elems.append(table2)
 
-        doc.build(elems)
+        doc.build(elems, onFirstPage=_set_pdf_metadata,onLaterPages=_set_pdf_metadata)
 
         print(f"PDF generato: {pdf_path}")
         return
