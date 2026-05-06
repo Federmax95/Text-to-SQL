@@ -22,6 +22,14 @@ DB_CONFIG = {
     "database": os.environ.get("DB_NAME", "northwind")
 }
 
+DB_CONFIG2 = {
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": db_pass,
+    "database": os.environ.get("DB_NAME", "northwind_sintetico2")
+}
+
+
 # Cross-Domain RAG: Puntiamo al pool locale costruito tramite spider_data
 POOL_DIR = os.path.join(PROJECT_DIR, "data", "pool")
 POOL_EMBEDDINGS_PATH = os.path.join(POOL_DIR, "pool_embeddings.npy")

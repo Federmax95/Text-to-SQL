@@ -11,11 +11,49 @@ from typing import Dict, List, Tuple
 from app.core.config import DB_CONFIG
 
 class NorthwindSchemaAdapter:
-    def __init__(self):
+    def __init__(self,DB_CONFIG):
         self.config = DB_CONFIG
         
     def _get_connection(self):
         return mysql.connector.connect(**self.config)
+    
+    def extract_tables(self):
+        tables = []
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
+                    tables = [row[0] for row in cursor.fetchall()]
+        except mysql.connector.Error as e:
+            print(f"❌ Errore critico connessione MySQL: {e}")
+        return tables
+    
+    def extract_columns(self, table):
+        columns=[]
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(f"DESCRIBE `{table}`")
+                    columns_info = cursor.fetchall()
+                    for col in columns_info:
+                            col_name = col[0]
+                            columns.append(col_name)
+        except mysql.connector.Error as e:
+            print(f"❌ Errore critico connessione MySQL: {e}")
+        return columns
+    
+    def extract_data(self, table, limit=100):
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(f"SELECT * FROM `{table}`")
+                    rows = cursor.fetchall()
+                    columns = [desc[0] for desc in cursor.description]
+                    return columns, rows
+        except mysql.connector.Error as e:
+            print(f"❌ Errore: {e}")
+            return [], []
+
 
     def extract_schema(self) -> Dict:
         """Estrae l'intero schema del database (tabelle, colonne, fks, data)."""
@@ -29,9 +67,8 @@ class NorthwindSchemaAdapter:
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cursor:
-                    # 1. Recupera tutte le tabelle
-                    cursor.execute("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
-                    tables = [row[0] for row in cursor.fetchall()]
+
+                    tables = self.extract_tables()
                     
                     for table in tables:
                         schema["valid_tables"].add(table.lower())

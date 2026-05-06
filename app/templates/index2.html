@@ -219,14 +219,10 @@
                             <span class="progress-text">Ricerca pattern analoghi nel Vector DB...</span>
                         </div>
                         <div class="progress-item pending" id="step-2">
-                            <span class="progress-icon">🧠</span>
-                            <span class="progress-text">Ragionamento chain-of-thought...</span>
-                        </div>
-                        <div class="progress-item pending" id="step-3">
                             <span class="progress-icon">🔍</span>
                             <span class="progress-text">Identificazione colonne necessarie...</span>
                         </div>
-                        <div class="progress-item pending" id="step-4">
+                        <div class="progress-item pending" id="step-3">
                             <span class="progress-icon">✨</span>
                             <span class="progress-text">Generazione query MySQL...</span>
                         </div>
@@ -328,8 +324,8 @@
         }
 
         function updateProgressStep(step) {
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-            const icons = ['⏳', '🧠', '🔍', '✨'];
+            const steps = ['step-1', 'step-2', 'step-3'];
+            const icons = ['⏳', '🔍', '✨'];
             const stepIndex = steps.indexOf(step);
 
             if (stepIndex === -1) return;
@@ -368,7 +364,7 @@
         }
 
         function completeAllSteps() {
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
+            const steps = ['step-1', 'step-2', 'step-3'];
             steps.forEach((stepId) => {
                 const element = document.getElementById(stepId);
                 if (element) {
@@ -384,8 +380,8 @@
         }
 
         function resetProgressSteps() {
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-            const icons = ['⏳', '🧠', '🔍', '✨'];
+            const steps = ['step-1', 'step-2', 'step-3', ];
+            const icons = ['⏳', '🔍', '✨'];
             const useBaseline = document.getElementById('baseline-toggle') ? document.getElementById('baseline-toggle').checked : false;
 
             steps.forEach((stepId, index) => {

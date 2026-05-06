@@ -4,8 +4,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_RESULTS_DIR = BASE_DIR / "results"
 
@@ -154,6 +152,161 @@ def _format_markdown_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -
     return "\n".join(lines)
 
 
+def _escape_latex(value: Any) -> str:
+    if value is None:
+        return ""
+    s = str(value)
+    replacements = {
+        "\\": "\\textbackslash{}",
+        "&": "\\&",
+        "%": "\\%",
+        "$": "\\$",
+        "#": "\\#",
+        "_": "\\_",
+        "{": "\\{",
+        "}": "\\}",
+        "~": "\\textasciitilde{}",
+        "^": "\\textasciicircum{}",
+    }
+    for k, v in replacements.items():
+        s = s.replace(k, v)
+    return s
+
+
+def _format_latex_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -> str:
+    # Main table header (WITHOUT filename column)
+    header = [
+        "Model",
+        "Tests",
+        "Baseline (\\%)",
+        "Pipeline (\\%)",
+        "Baseline (s)",
+        "Pipeline (s)",
+        "Total (s)",
+    ]
+
+    def fmt_row(r: dict[str, Any]) -> list[str]:
+        return [
+            _escape_latex(r.get("model", "")),
+            str(r.get("total_tests", "")),
+            f'{r.get("baseline_accuracy", 0):.2f}',
+            f'{r.get("pipeline_accuracy", 0):.2f}',
+            _format_seconds(r.get("baseline_time_total", 0.0)),
+            _format_seconds(r.get("pipeline_time_total", 0.0)),
+            _format_seconds(r.get("total_time_total", 0.0)),
+        ]
+
+    # Build grouped summary for second table
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        model = str(r.get("model") or "UNKNOWN")
+        grouped.setdefault(model, []).append(r)
+
+    summary_rows: list[list[str]] = []
+    for model_name in sorted(grouped.keys()):
+        model_rows = grouped[model_name]
+        baseline_wrong = sum(int((r.get("total_tests") or 0) -
+                             (r.get("baseline_matched") or 0)) for r in model_rows)
+        baseline_correct = sum(
+            int(r.get("baseline_correct_total") or 0) for r in model_rows)
+        pipeline_wrong = sum(int((r.get("total_tests") or 0) -
+                             (r.get("pipeline_matched") or 0)) for r in model_rows)
+        pipeline_correct = sum(
+            int(r.get("pipeline_correct_total") or 0) for r in model_rows)
+        both_correct = sum(int(r.get("both_correct") or 0) for r in model_rows)
+        baseline_only_correct = sum(
+            int(r.get("baseline_only_correct") or 0) for r in model_rows)
+        pipeline_only_correct = sum(
+            int(r.get("pipeline_only_correct") or 0) for r in model_rows)
+
+        summary_rows.append([
+            _escape_latex(model_name),
+            str(baseline_wrong),
+            str(baseline_correct),
+            str(pipeline_wrong),
+            str(pipeline_correct),
+            str(both_correct),
+            str(baseline_only_correct),
+            str(pipeline_only_correct),
+        ])
+
+    # Begin LaTeX document with packages suitable to fit tables inside margins
+    lines: list[str] = []
+    lines.append(r"\documentclass{article}")
+    lines.append(r"\usepackage[margin=1in]{geometry}")
+    lines.append(r"\usepackage{booktabs}")
+    lines.append(r"\usepackage[T1]{fontenc}")
+    lines.append(r"\usepackage{tabularx}")
+    lines.append(r"\usepackage{array}")
+    lines.append(r"\usepackage{caption}")
+    lines.append(r"\begin{document}")
+
+    # First table: main results — use tabularx to ensure width fits margins
+    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\centering")
+    lines.append(r"\small")
+    # model column flexible (X), others right-aligned
+    lines.append(r"\begin{tabularx}{\textwidth}{X r r r r r r}")
+    lines.append(r"\toprule")
+    lines.append(" & ".join(header) + r" \\")
+    lines.append(r"\midrule")
+
+    for r in rows:
+        cells = fmt_row(r)
+        lines.append(" & ".join(cells) + r" \\")
+
+    # lines.append(r"\midrule")
+    # totals_cells = [
+    #     "TOTAL",
+    #     str(totals.get("total_tests", "")),
+    #     "-",
+    #     "-",
+    #     _format_seconds(totals.get("baseline_time_total", 0.0)),
+    #     _format_seconds(totals.get("pipeline_time_total", 0.0)),
+    #     _format_seconds(totals.get("total_time_total", 0.0)),
+    # ]
+    # lines.append(" & ".join(totals_cells) + r" \\")
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabularx}")
+    lines.append(r"\caption{Benchmark summary}")
+    lines.append(r"\end{table}")
+
+    # Second table: summary per model — placed below the first, same page if fits
+    summary_header = [
+        "Model",
+        "Baseline wrong",
+        "Baseline correct",
+        "Pipeline wrong",
+        "Pipeline correct",
+        "Both correct",
+        "Baseline only",
+        "Pipeline only",
+    ]
+
+    lines.append(r"\begin{table}[ht]")
+    lines.append(r"\centering")
+    lines.append(r"\scriptsize")
+    # Model column flexible, numeric columns fixed small widths to fit margins
+    num_col = r"{>{\raggedleft\arraybackslash}p{0.09\textwidth}}"
+    cols = " ".join([num_col] * 7)
+    lines.append(r"\begin{tabularx}{\textwidth}{X " + cols + r"}")
+    lines.append(r"\toprule")
+    lines.append(" & ".join(summary_header) + r" \\")
+    lines.append(r"\midrule")
+
+    for s in summary_rows:
+        lines.append(" & ".join(s) + r" \\")
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabularx}")
+    lines.append(r"\caption{Riepilogo per modello}")
+    lines.append(r"\end{table}")
+
+    lines.append(r"\end{document}")
+
+    return "\n".join(lines)
+
+
 def _write_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
     fieldnames = [
         "file",
@@ -208,7 +361,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--format",
-        choices=("md", "csv", "json", "pdf"),
+        choices=("md", "csv", "json", "pdf", "tex"),
         default="md",
         help="Output format",
     )
@@ -250,6 +403,14 @@ def main() -> None:
 
     if args.format == "md":
         content = _format_markdown_table(rows, totals)
+        if args.output:
+            args.output.write_text(content + "\n", encoding="utf-8")
+        else:
+            print(content)
+        return
+
+    if args.format == "tex":
+        content = _format_latex_table(rows, totals)
         if args.output:
             args.output.write_text(content + "\n", encoding="utf-8")
         else:
@@ -348,8 +509,8 @@ def main() -> None:
             "pipeline wrong",
             "pipeline correct",
             "both correct",
-            "pipeline wrong<br/>baseline correct",
-            "pipeline correct<br/>baseline wrong",
+            "baseline only",
+            "pipeline only",
         ]
         summary_data = [summary_header]
 
@@ -410,7 +571,8 @@ def main() -> None:
         table2.setStyle(style2)
         elems.append(table2)
 
-        doc.build(elems, onFirstPage=_set_pdf_metadata,onLaterPages=_set_pdf_metadata)
+        doc.build(elems, onFirstPage=_set_pdf_metadata,
+                  onLaterPages=_set_pdf_metadata)
 
         print(f"PDF generato: {pdf_path}")
         return

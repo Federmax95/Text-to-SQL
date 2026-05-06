@@ -1,0 +1,6 @@
+group_by,display,title,filter_row_source,default
+Product ID,Product,Sales by Product,SELECT DISTINCT [Product Name] FROM [products] ORDER BY [Product Name];,0
+country_region,Customer,Sales By Employee,SELECT DISTINCT [Employee Name] FROM [employees Extended] ORDER BY [Employee Name];,0
+employee_id,Employee,Sales by Product,SELECT DISTINCT [Product Name] FROM [products] ORDER BY [Product Name];,0
+country_region,Employee,Sales By Employee,SELECT DISTINCT [Employee Name] FROM [employees Extended] ORDER BY [Employee Name];,0
+country_region,Employee,Sales By Employee,SELECT DISTINCT [Employee Name] FROM [employees Extended] ORDER BY [Employee Name];,0

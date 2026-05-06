@@ -28,10 +28,6 @@ from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
 
-# Similarità con la quale recupera gli esempi dal database
-SIMILARITY_THRESHOLD = 0.50
-
-
 # =========================
 # OLLAMA & UTILS
 # =========================
@@ -78,8 +74,7 @@ def clean_sql(response: str) -> str:
     # Rimuovo gli spazi ad inizio e fine stringa
     response = response.strip()
     # cerco all'interno del prompt la query sql generata
-    match = re.search(r"```(?:sql)?\s*\n?(.*?)```",
-                      response, re.DOTALL | re.IGNORECASE)
+    match = re.search(r"```(?:sql)?\s*\n?(.*?)```",response, re.DOTALL | re.IGNORECASE)
     if match:
         # se l'ho trovata la restituisco
         return match.group(1).strip()
@@ -90,7 +85,6 @@ def clean_sql(response: str) -> str:
 # PROMPT BUILDERS
 # =========================
 def build_baseline_prompt(question: str, schema_text: str) -> str:
-    """Baseline zero-shot prompt per generare SQL direttamente (English version)."""
     return f"""
 
             {schema_text}
@@ -163,7 +157,7 @@ def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str
             - "exactly N"  → HAVING COUNT(*) = N
             - "most/top/highest" → ORDER BY COUNT(*) DESC LIMIT 1
 
-            ⚠️ IMPORTANT:
+            IMPORTANT:
             - If the question refers to a measurable quantity (downloads, revenue, cost),
             use SUM(), NOT COUNT().
 
@@ -222,7 +216,7 @@ def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str
             """
 
 
-def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str, question: str, reasoning: str = "") -> str:
+def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str, question: str) -> str:
     return f"""You are a SQLite expert fixing a query.
 
             ### Schema:
@@ -230,8 +224,6 @@ def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str,
 
             ### Question:
             {question}
-
-
 
             ### Original Query:
             {query}
@@ -333,8 +325,7 @@ def execute_query(query: str, adapter: SchemaAdapter) -> dict:
         with adapter._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query)
-            cols = [desc[0]
-                    for desc in cursor.description] if cursor.description else []
+            cols = [desc[0] for desc in cursor.description] if cursor.description else []
             data = cursor.fetchall()
             return {"success": True, "columns": cols, "data": data}
     except Exception as e:
@@ -350,8 +341,7 @@ def format_results(result: dict, max_rows: int = 25) -> str:
     data = result["data"][:max_rows]
     json_data = []
     for row in data:
-        row_dict = {cols[i]: str(
-            val) if val is not None else None for i, val in enumerate(row)}
+        row_dict = {cols[i]: str(val) if val is not None else None for i, val in enumerate(row)}
         json_data.append(row_dict)
     out_json = json.dumps(json_data, indent=2, ensure_ascii=False)
     return out_json
@@ -413,8 +403,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         max_sim = similars[0]["similarity"] if similars else 0
 
         if similars:
-            print(
-                f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
+            print(f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
             sim_context = retriever.format_examples(similars)
         else:
             sim_context = ""

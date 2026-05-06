@@ -8,8 +8,8 @@ def main():
     # Crea DB
     conn = mysql.connector.connect(host="localhost", user="root", password="[PASSWORD]")
     cursor = conn.cursor()
-    cursor.execute("DROP DATABASE IF EXISTS `northwind_sintetico`;")
-    cursor.execute("CREATE DATABASE `northwind_sintetico`;")
+    cursor.execute("DROP DATABASE IF EXISTS `northwind_sintetico2`;")
+    cursor.execute("CREATE DATABASE `northwind_sintetico2`;")
     cursor.close()
     conn.close()
     
@@ -20,7 +20,7 @@ def main():
         print("Devi installare sqlalchemy (pip install sqlalchemy)")
         return
         
-    engine = create_engine("mysql+mysqlconnector://root:[PASSWORD]@localhost/northwind_sintetico")
+    engine = create_engine("mysql+mysqlconnector://root:[PASSWORD]@localhost/northwind_sintetico2")
     
     out_dir = "Dataset_Sintetico"
     csv_files = [f for f in os.listdir(out_dir) if f.endswith('.csv')]
