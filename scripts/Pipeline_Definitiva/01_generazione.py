@@ -4,7 +4,7 @@ import os
 import warnings
 import numpy as np
 from sdv.metadata import SingleTableMetadata
-from sdv.single_table import GaussianCopulaSynthesizer
+from sdv.single_table import CTGANSynthesizer
 
 warnings.filterwarnings("ignore")
 
@@ -57,7 +57,7 @@ def main():
             metadata.detect_from_dataframe(df)
             
             # Addestramento
-            synthesizer = GaussianCopulaSynthesizer(metadata)
+            synthesizer = CTGANSynthesizer(metadata)
             synthesizer.fit(df)
             
             # Generazione
