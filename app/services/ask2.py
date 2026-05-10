@@ -7,6 +7,11 @@ Usa un vector pool per estrarre gli esempi più vicini alla domanda dell'utente 
 Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
+from app.core.config2 import SYNTHETIC_DB_PATH
+from app.services.GenerationSyntheticDataset import generate_synthetic_dataset
+from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
+from app.services.retriever2 import Retriever
+from app.services.schema_adapter2 import SchemaAdapter
 import time
 from sqlglot import exp
 import re
@@ -22,10 +27,6 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 
-from app.services.schema_adapter2 import SchemaAdapter
-from app.services.retriever2 import Retriever
-from app.core.config2 import LLM_MODEL, OLLAMA_URL, TOP_K
-
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
 
 # =========================
@@ -33,6 +34,8 @@ DEBUG = False  # True per stampare dettagli di debug, False per produzione
 # =========================
 
 # Funzione per chiamare l'api di ollama
+
+
 def call_ollama(prompt: str, retries=5, model=None) -> str:
     """Chiama l'API REST locale di Ollama con backoff esponenziale."""
     last_error = None
@@ -41,7 +44,8 @@ def call_ollama(prompt: str, retries=5, model=None) -> str:
         try:
             response = requests.post(
                 OLLAMA_URL,
-                json={"model": target_model, "prompt": prompt, "stream": False,"think": False,},
+                json={"model": target_model, "prompt": prompt,
+                      "stream": False, "think": False, },
                 timeout=120
             )
             response.raise_for_status()
@@ -74,7 +78,8 @@ def clean_sql(response: str) -> str:
     # Rimuovo gli spazi ad inizio e fine stringa
     response = response.strip()
     # cerco all'interno del prompt la query sql generata
-    match = re.search(r"```(?:sql)?\s*\n?(.*?)```",response, re.DOTALL | re.IGNORECASE)
+    match = re.search(r"```(?:sql)?\s*\n?(.*?)```",
+                      response, re.DOTALL | re.IGNORECASE)
     if match:
         # se l'ho trovata la restituisco
         return match.group(1).strip()
@@ -99,6 +104,7 @@ def build_baseline_prompt(question: str, schema_text: str) -> str:
 
             ### SQLite Query:
             """
+
 
 def build_columns_prompt(question: str, schema_text: str, similar: str = "", reasoning: str = "") -> str:
     return f"""You are a SQLite schema analyzer.
@@ -325,7 +331,8 @@ def execute_query(query: str, adapter: SchemaAdapter) -> dict:
         with adapter._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query)
-            cols = [desc[0] for desc in cursor.description] if cursor.description else []
+            cols = [desc[0]
+                    for desc in cursor.description] if cursor.description else []
             data = cursor.fetchall()
             return {"success": True, "columns": cols, "data": data}
     except Exception as e:
@@ -341,7 +348,8 @@ def format_results(result: dict, max_rows: int = 25) -> str:
     data = result["data"][:max_rows]
     json_data = []
     for row in data:
-        row_dict = {cols[i]: str(val) if val is not None else None for i, val in enumerate(row)}
+        row_dict = {cols[i]: str(
+            val) if val is not None else None for i, val in enumerate(row)}
         json_data.append(row_dict)
     out_json = json.dumps(json_data, indent=2, ensure_ascii=False)
     return out_json
@@ -403,7 +411,8 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         max_sim = similars[0]["similarity"] if similars else 0
 
         if similars:
-            print(f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
+            print(
+                f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
             sim_context = retriever.format_examples(similars)
         else:
             sim_context = ""
@@ -418,7 +427,8 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         notify_progress("step-2", "Identificazione colonne necessarie...")
         print("⏳ Identificazione colonne strettamente necessarie...")
         try:
-            p_cols = build_columns_prompt(augmented_question, schema_text, sim_context, reasoning)
+            p_cols = build_columns_prompt(
+                augmented_question, schema_text, sim_context, reasoning)
             cols_raw = call_ollama(p_cols, model=llm_model)
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
@@ -426,12 +436,14 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         valid_cols = validate_columns(cols_raw, valid_tables, valid_columns)
         if not valid_cols:
             if DEBUG:
-                print("   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
+                print(
+                    "   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
             valid_cols = list(valid_columns.keys())
         # ── PHASE 3: SQL Generation ──
         notify_progress("step-3", "Generazione query MySQL...")
         print("⏳ Generazione Query Target...")
-        p_sql = build_sql_prompt("\n".join(valid_cols), augmented_question, schema_text, sim_context, reasoning)
+        p_sql = build_sql_prompt(
+            "\n".join(valid_cols), augmented_question, schema_text, sim_context, reasoning)
         sql = clean_sql(call_ollama(p_sql))
 
     for attempt in range(1, max_attempts + 1):
@@ -462,7 +474,8 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                         sql, err, augmented_question, schema_text), model=llm_model)
                     if DEBUG:
                         print(f"   💡 Diagnosi: {explain[:100]}...")
-                    p_fix = build_fix_prompt(sql, err, explain, schema_text, question=augmented_question)
+                    p_fix = build_fix_prompt(
+                        sql, err, explain, schema_text, question=augmented_question)
                     sql = clean_sql(call_ollama(p_fix, model=llm_model))
                 else:
                     return {"success": False, "error": err, "sql": sql}
@@ -515,6 +528,37 @@ def interactive_loop():
             print("\n👋 Arrivederci!")
             break
         if not q:
+            continue
+        # Comandi CLI speciali
+        if q.lower() in ('g', 'genera', 'genera_sintetico'):
+            # Genera dataset sintetico dal DB corrente
+            try:
+                print('\n⏳ Avvio generazione dataset sintetico...')
+
+                def progress_cb(step, msg=''):
+                    print(f'  [{step}] {msg}')
+
+                out_db = SYNTHETIC_DB_PATH
+                res = generate_synthetic_dataset(
+                    sqlite_path, out_db, scale=1.0, progress_callback=progress_cb)
+                if res.get('success'):
+                    print(
+                        f"\n[OK] Dataset sintetico salvato in: {res.get('output_db', out_db)}")
+                    if ask_yes_no('Vuoi caricare ora il DB sintetico come DB attivo? [s/n]: '):
+                        # sovrascrivi sqlite_path e ricarica adapter
+                        sqlite_path = os.path.abspath(
+                            res.get('output_db', out_db))
+                        adapter = SchemaAdapter(sqlite_path=sqlite_path)
+                        schema_data = adapter.extract_schema()
+                        schema_text = adapter.schema_to_text(schema_data)
+                        valid_tables = schema_data['valid_tables']
+                        valid_columns = schema_data['valid_columns']
+                        print(
+                            f"[OK] DB sintetico caricato: {sqlite_path} ({len(valid_tables)} tabelle)")
+                else:
+                    print(f"[ERROR] Generazione fallita: {res.get('error')}")
+            except Exception as e:
+                print(f"[ERROR] Errore durante la generazione sintetica: {e}")
             continue
         if q.lower() in ('esci', 'exit', 'quit', 'q'):
             print("👋 Arrivederci!")
