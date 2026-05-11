@@ -161,7 +161,7 @@
                 <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica Dataset</button>
             </div>
             <div class="mt-2">
-                <button class="btn btn-warning" onclick="generateSyntheticDataset()" id="synthetic-gen-btn" style="display: none;">
+                <button class="btn btn-outline-primary d-none" onclick="generateSyntheticDataset()" id="synthetic-gen-btn">
                     ✨ Genera Dataset Sintetico
                 </button>
             </div>
@@ -458,18 +458,18 @@
                     dbStatus.className = 'small text-success';
                     // Mostra il pulsante di generazione solo se il DB è caricato e non è già sintetico
                     if (res.db_name && !res.db_name.includes('synthetic')) {
-                        syntheticBtn.style.display = 'inline-block';
+                        syntheticBtn.classList.remove('d-none');
                         syntheticBtn.disabled = false;
                     }
                 } else {
                     dbStatus.textContent = 'DB non configurato. Seleziona un file e premi Carica DB.';
                     dbStatus.className = 'small text-warning';
-                    syntheticBtn.style.display = 'none';
+                    syntheticBtn.classList.add('d-none');
                 }
             } catch (e) {
                 dbStatus.textContent = 'Impossibile leggere lo stato del DB.';
                 dbStatus.className = 'small text-danger';
-                syntheticBtn.style.display = 'none';
+                syntheticBtn.classList.add('d-none');
             }
         }
 
@@ -501,12 +501,12 @@
                 if (response.ok && res.success) {
                     dbStatus.textContent = `Connesso: ${res.db_name} (${res.tables} tabelle)`;
                     dbStatus.className = 'small text-success';
-                    syntheticBtn.style.display = 'inline-block';
+                    syntheticBtn.classList.remove('d-none');
                     syntheticBtn.disabled = false;
                 } else {
                     dbStatus.textContent = res.detail || res.error || 'Errore durante la configurazione DB.';
                     dbStatus.className = 'small text-danger';
-                    syntheticBtn.style.display = 'none';
+                    syntheticBtn.classList.add('d-none');
                 }
             } catch (e) {
                 dbStatus.textContent = 'Errore di connessione al server.';
@@ -579,9 +579,13 @@
                 const loadRes = await loadResponse.json();
                 
                 if (loadRes.success) {
-                    dbStatus.textContent = `${loadRes.message} (${loadRes.tables} tabelle)`;
+                    let msg = `${loadRes.message} (${loadRes.tables} tabelle)`;
+                    if (loadRes.sdmetrics_percent !== undefined && loadRes.sdmetrics_percent !== null) {
+                        msg += ` — Accuratezza SDV: ${loadRes.sdmetrics_percent}%`;
+                    }
+                    dbStatus.textContent = msg;
                     dbStatus.className = 'small text-success';
-                    syntheticBtn.style.display = 'none';
+                    syntheticBtn.classList.add('d-none');
                 } else {
                     throw new Error(loadRes.error || 'Errore nel caricamento del dataset sintetico');
                 }
@@ -598,7 +602,7 @@
                 syntheticLoader.classList.add('d-none');
                 // Se il pulsante è visibile, assicurati che sia abilitato per ulteriori azioni
                 try {
-                    if (syntheticBtn && syntheticBtn.style.display !== 'none') {
+                    if (syntheticBtn && !syntheticBtn.classList.contains('d-none')) {
                         syntheticBtn.disabled = false;
                     }
                 } catch (e) {

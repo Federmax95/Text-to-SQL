@@ -6,7 +6,6 @@ Synthetic SQLite Pipeline — GaussianCopula + Full Validation
 • FK repair  : referential integrity restored after synthesis
 • Validation :
     1. Pandera       – structural / dtype schema checks
-    2. Great Expectations – statistical / distribution expectations
     3. SDMetrics     – fidelity score per table
 """
 
@@ -22,31 +21,10 @@ import os
 import sys
 import warnings
 from collections import defaultdict, deque
+import json
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
-
-# ── SDV ───────────────────────────────────────────────────────────────────────
-
-# ── SDMetrics ─────────────────────────────────────────────────────────────────
-
-# ── Pandera ───────────────────────────────────────────────────────────────────
-
-# ── Great Expectations — version-safe import ──────────────────────────────────
-GE_MODE = None
-try:
-    from great_expectations.dataset import PandasDataset as GEPandasDataset
-    GE_MODE = "pandas_dataset"          # GE < 0.18 (legacy)
-except ImportError:
-    try:
-        import great_expectations as gx
-        _ = gx.get_context(mode="ephemeral")   # GE >= 0.18
-        GE_MODE = "v1"
-    except Exception:
-        pass
-
-if GE_MODE is None:
-    print("[!] Great Expectations not available — GE validation will be skipped.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -65,7 +43,8 @@ SEP2 = "─" * 65
 
 def load_sqlite_database(db_path: str) -> dict:
     conn = sqlite3.connect(db_path)
-    tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table';", conn)["name"].tolist()
+    tables = pd.read_sql_query(
+        "SELECT name FROM sqlite_master WHERE type='table';", conn)["name"].tolist()
 
     data = {}
     for t in tables:
@@ -306,164 +285,10 @@ def run_pandera(real_data: dict, synthetic: dict) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 7.  GREAT EXPECTATIONS VALIDATION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _build_expectations(real_df: pd.DataFrame) -> list:
-    """Auto-derive GE expectations from real data statistics."""
-    exps = []
-    for col in real_df.columns:
-        exps.append(("expect_column_to_exist", {"column": col}))
-
-        null_rate = real_df[col].isna().mean()
-        if null_rate < 0.05:
-            exps.append(("expect_column_values_to_not_be_null",
-                         {"column": col, "mostly": 0.90}))
-
-        if pd.api.types.is_numeric_dtype(real_df[col]):
-            clean = real_df[col].dropna()
-            if len(clean) > 0:
-                exps.append(("expect_column_values_to_be_between", {
-                    "column":    col,
-                    "min_value": float(clean.min()),
-                    "max_value": float(clean.max()),
-                    "mostly":    0.95,
-                }))
-
-        n_unique = real_df[col].nunique()
-        if real_df[col].dtype == object and 1 < n_unique <= 30:
-            exps.append(("expect_column_values_to_be_in_set", {
-                "column":    col,
-                "value_set": real_df[col].dropna().unique().tolist(),
-                "mostly":    0.95,
-            }))
-
-    return exps
-
-
-# ── GE legacy path (PandasDataset) ───────────────────────────────────────────
-
-def _run_ge_legacy(real_data: dict, synthetic: dict) -> pd.DataFrame:
-    all_results = []
-    for tname in real_data:
-        if tname not in synthetic:
-            continue
-        exps = _build_expectations(real_data[tname])
-        ge_df = GEPandasDataset(synthetic[tname])
-        passed = failed = 0
-        for method_name, kwargs in exps:
-            try:
-                res = getattr(ge_df, method_name)(**kwargs)
-                ok = res["success"]
-            except Exception:
-                ok = False
-            if ok:
-                passed += 1
-            else:
-                failed += 1
-            all_results.append({
-                "table":       tname,
-                "expectation": method_name,
-                "column":      kwargs.get("column", ""),
-                "success":     ok,
-            })
-        total = passed + failed
-        pct = passed / total * 100 if total else 0
-        print(f"  {tname:35s}  {passed:>4}/{total:<4} ({pct:.1f}%)")
-    return pd.DataFrame(all_results)
-
-
-# ── GE v1 path — pandas-based evaluator (version-agnostic) ───────────────────
-# GE's internal context/datasource API breaks across minor versions.
-# We evaluate the same expectations directly with pandas so the logic is
-# identical but has zero dependency on GE's unstable internal plumbing.
-
-def _evaluate_expectation(syn_df: pd.DataFrame,
-                          method_name: str, kwargs: dict) -> bool:
-    col = kwargs.get("column")
-    mostly = kwargs.get("mostly", 1.0)
-
-    if method_name == "expect_column_to_exist":
-        return col in syn_df.columns
-
-    if col not in syn_df.columns:
-        return False
-
-    series = syn_df[col]
-    n = len(series)
-    if n == 0:
-        return True
-
-    if method_name == "expect_column_values_to_not_be_null":
-        ok_rate = series.notna().sum() / n
-        return ok_rate >= mostly
-
-    if method_name == "expect_column_values_to_be_between":
-        lo, hi = kwargs.get("min_value"), kwargs.get("max_value")
-        valid = series.dropna()
-        if len(valid) == 0:
-            return True
-        in_range = ((valid >= lo) & (valid <= hi)).sum()
-        return in_range / n >= mostly
-
-    if method_name == "expect_column_values_to_be_in_set":
-        value_set = set(kwargs.get("value_set", []))
-        valid = series.dropna()
-        if len(valid) == 0:
-            return True
-        in_set = valid.isin(value_set).sum()
-        return in_set / n >= mostly
-
-    return True   # unknown expectation -> pass by default
-
-
-def _run_ge_v1(real_data: dict, synthetic: dict) -> pd.DataFrame:
-    all_results = []
-
-    for tname in real_data:
-        if tname not in synthetic:
-            continue
-
-        exps = _build_expectations(real_data[tname])
-        syn_df = synthetic[tname]
-        passed = failed = 0
-        for method_name, kwargs in exps:
-            ok = _evaluate_expectation(syn_df, method_name, kwargs)
-            if ok:
-                passed += 1
-            else:
-                failed += 1
-            all_results.append({
-                "table":       tname,
-                "expectation": method_name,
-                "column":      kwargs.get("column", ""),
-                "success":     ok,
-            })
-
-        total = passed + failed
-        pct = passed / total * 100 if total else 0
-        print(f"  {tname:35s}  {passed:>4}/{total:<4} ({pct:.1f}%)")
-
-    return pd.DataFrame(all_results)
-
-
-def run_ge(real_data: dict, synthetic: dict) -> pd.DataFrame:
-    print(f"\n{SEP}\n  GREAT EXPECTATIONS VALIDATION\n{SEP}")
-    if GE_MODE is None:
-        print("  [!] Skipped (great_expectations not installed or incompatible).")
-        return pd.DataFrame()
-    if GE_MODE == "pandas_dataset":
-        return _run_ge_legacy(real_data, synthetic)
-    else:
-        return _run_ge_v1(real_data, synthetic)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # 8.  SDMETRICS VALIDATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_sdmetrics(real_data: dict, synthetic: dict,
-                  multi_meta: MultiTableMetadata) -> pd.DataFrame:
+def run_sdmetrics(real_data: dict, synthetic: dict, multi_meta: MultiTableMetadata) -> pd.DataFrame:
     print(f"\n{SEP}\n  SDMETRICS — per-table Quality Report\n{SEP}")
     rows = []
     for tname in real_data:
@@ -603,10 +428,6 @@ def generate_synthetic_dataset(input_db: str, output_db: str, scale: float = 2.0
         update_progress("validation_pandera", "Validazione Pandera...")
         pandera_df = run_pandera(real_data, synthetic)
 
-        # 9. Great Expectations
-        update_progress("validation_ge", "Validazione Great Expectations...")
-        ge_df = run_ge(real_data, synthetic)
-
         # 10. SDMetrics
         update_progress("validation_sdmetrics",
                         "Calcolo metriche SDMetrics...")
@@ -619,15 +440,11 @@ def generate_synthetic_dataset(input_db: str, output_db: str, scale: float = 2.0
         pan_total = len(pandera_df)
         print(f"\n  Pandera :  {pan_pass}/{pan_total} tables passed")
 
-        if not ge_df.empty:
-            ge_pass = ge_df["success"].sum()
-            ge_total = len(ge_df)
-            print(f"  GE      :  {ge_pass}/{ge_total} expectations passed "
-                  f"({ge_pass/ge_total*100:.1f}%)")
-
-        valid_sdm = sdm_df.dropna(subset=["overall"])
+        valid_sdm = sdm_df.dropna(
+            subset=["overall"]) if sdm_df is not None else pd.DataFrame()
+        mean_score = None
         if not valid_sdm.empty:
-            mean_score = valid_sdm["overall"].mean()
+            mean_score = float(valid_sdm["overall"].mean())
             worst = valid_sdm.loc[valid_sdm["overall"].idxmin()]
             best = valid_sdm.loc[valid_sdm["overall"].idxmax()]
             print(f"  SDMetrics mean quality  : {mean_score:.4f}")
@@ -647,12 +464,29 @@ def generate_synthetic_dataset(input_db: str, output_db: str, scale: float = 2.0
         print("  DONE")
         print(f"{SEP}\n")
 
+        # persist some metrics next to the output DB for later inspection
+        try:
+            metrics = {
+                "sdmetrics_mean": mean_score,
+                "per_table": []
+            }
+            if mean_score is not None:
+                metrics["per_table"] = valid_sdm[[
+                    "table", "overall"]].to_dict(orient="records")
+            metrics_path = f"{output_db}.metrics.json"
+            with open(metrics_path, "w", encoding="utf-8") as mf:
+                json.dump(metrics, mf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] Unable to save metrics file: {e}")
+
         return {
             "success": True,
             "output_db": output_db,
             "tables_count": len(synthetic),
             "pandera_pass": int(pan_pass),
             "pandera_total": int(pan_total),
+            "sdmetrics_mean": mean_score,
+            "metrics_file": metrics_path if 'metrics_path' in locals() else None,
         }
 
     except Exception as e:
@@ -707,9 +541,6 @@ def main():
     # 8. Pandera
     pandera_df = run_pandera(real_data, synthetic)
 
-    # 9. Great Expectations
-    ge_df = run_ge(real_data, synthetic)
-
     # 10. SDMetrics
     sdm_df = run_sdmetrics(real_data, synthetic, metadata)
 
@@ -719,12 +550,6 @@ def main():
     pan_pass = pandera_df["pass"].sum()
     pan_total = len(pandera_df)
     print(f"\n  Pandera :  {pan_pass}/{pan_total} tables passed")
-
-    if not ge_df.empty:
-        ge_pass = ge_df["success"].sum()
-        ge_total = len(ge_df)
-        print(f"  GE      :  {ge_pass}/{ge_total} expectations passed "
-              f"({ge_pass/ge_total*100:.1f}%)")
 
     valid_sdm = sdm_df.dropna(subset=["overall"])
     if not valid_sdm.empty:

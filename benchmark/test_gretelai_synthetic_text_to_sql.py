@@ -18,10 +18,10 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
     
-from app.core.config2 import LLM_MODEL
-from app.services.ask2 import process_question
-from app.services.schema_adapter2 import SchemaAdapter
-from app.services.retriever2 import Retriever
+from app.core.config import LLM_MODEL
+from app.services.ask import process_question
+from app.services.schema_adapter import SchemaAdapter
+from app.services.retriever import Retriever
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')

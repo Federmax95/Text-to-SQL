@@ -13,7 +13,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from app.core.config import (POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL, TOP_K)
 
 
-class SPSRetriever:
+class Retriever:
     """Retriever per trovare le domande SQL più simili nel pool."""
 
     def __init__(self):
@@ -28,15 +28,14 @@ class SPSRetriever:
             self.embeddings = np.load(POOL_EMBEDDINGS_PATH)
             with open(POOL_DATA_PATH, "r", encoding="utf-8") as f:
                 self.pool_data = json.load(f)
-            print(
-                f"  ✅ Retriever pronto: {len(self.pool_data)} esempi nel pool")
+            print(f"  ✅ Retriever pronto: {len(self.pool_data)} esempi nel pool")
         else:
             print("  ⚠️  Pool RAG non trovato. Il retriever userà un pool vuoto.")
             embedding_dim = self.model.get_sentence_embedding_dimension()
             self.embeddings = np.zeros((0, embedding_dim), dtype=np.float32)
             self.pool_data = []
 
-    def retrieve(self, question: str, top_k: int = None) -> list[dict]:
+    def retrieve(self, question: str, top_k: int = None, db_id: str | None = None) -> list[dict]:
         """
         Trova i K esempi più simili alla domanda data.
 
@@ -47,6 +46,7 @@ class SPSRetriever:
         Returns:
             Lista di dict con: question, query, db_id, similarity
         """
+        #Se non è stato specificato dall'utente il numero di esempi da estrarre verranno estratti in automatico 5 esempi dal pool
         if top_k is None:
             top_k = TOP_K
 
@@ -57,6 +57,7 @@ class SPSRetriever:
         valid_indices = [
             i for i, item in enumerate(self.pool_data)
             if item.get("is_correct", True)
+            and (db_id is None or item.get("db_id", "northwind") == db_id)
         ]
         if not valid_indices:
             return []
@@ -109,17 +110,15 @@ class SPSRetriever:
     def _normalize_text(self, text: str) -> str:
         return " ".join(text.strip().lower().split())
 
-    def example_exists(self, question: str, query: str, is_correct: bool = True) -> bool:
+    def example_exists(self, question: str, query: str, db_id: str = "northwind", is_correct: bool = True) -> bool:
         normalized_question = self._normalize_text(question)
         normalized_query = self._normalize_text(query)
         for item in self.pool_data:
-            same_question = self._normalize_text(
-                item.get("question", "")) == normalized_question
-            same_query = self._normalize_text(
-                item.get("query", "")) == normalized_query
-            same_quality = bool(item.get("is_correct", True)
-                                ) == bool(is_correct)
-            if same_question and same_query and same_quality:
+            same_question = self._normalize_text(item.get("question", "")) == normalized_question
+            same_query = self._normalize_text(item.get("query", "")) == normalized_query
+            same_db = item.get("db_id", "northwind") == db_id
+            same_quality = bool(item.get("is_correct", True)) == bool(is_correct)
+            if same_question and same_query and same_db and same_quality:
                 return True
         return False
 
@@ -132,7 +131,7 @@ class SPSRetriever:
         error: str | None = None,
     ) -> bool:
         """Aggiunge un esempio al pool (corretto o errato) e aggiorna embedding + file sul disco."""
-        if self.example_exists(question, query, is_correct=is_correct):
+        if self.example_exists(question, query, db_id=db_id, is_correct=is_correct):
             print(f"  ⚠️  Esempio già presente nel pool: '{question}'")
             return False
 
@@ -155,11 +154,7 @@ class SPSRetriever:
         # Salva su disco per persistenza
         with open(POOL_DATA_PATH, "w", encoding="utf-8") as f:
             json.dump(self.pool_data, f, ensure_ascii=False, indent=2)
-
         np.save(POOL_EMBEDDINGS_PATH, self.embeddings)
-
         quality_label = "corretto" if is_correct else "errato"
-        print(
-            f"  ✅ Esempio aggiunto al pool ({quality_label}): '{question}' (db_id={db_id})"
-        )
+        print(f"  ✅ Esempio aggiunto al pool ({quality_label}): '{question}' (db_id={db_id})")
         return True

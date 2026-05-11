@@ -10,7 +10,7 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
-from app.core.config2 import POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL
+from app.core.config import POOL_EMBEDDINGS_PATH, POOL_DATA_PATH, EMBEDDING_MODEL
 
 def build_pool():
     print("📥 Caricamento dataset gretelai/synthetic_text_to_sql...")

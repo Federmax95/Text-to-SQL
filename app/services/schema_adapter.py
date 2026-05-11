@@ -1,132 +1,104 @@
-"""
-🗃️ Northwind Schema Adapter
-============================
-Si connette a MySQL per estrarre programmaticamente le definizioni
-delle tabelle, le foreign keys e i dati di esempio (sample data)
-per abbattere le instabilità logiche del LLM (RAG Context).
-"""
+import sqlite3
+from typing import Dict
 
-import mysql.connector
-from typing import Dict, List, Tuple
-from app.core.config import DB_CONFIG
 
-class NorthwindSchemaAdapter:
-    def __init__(self,DB_CONFIG):
-        self.config = DB_CONFIG
-        
+class SchemaAdapter:
+    def __init__(self, sqlite_path: str = None):
+        self.sqlite_path = sqlite_path
+
     def _get_connection(self):
-        return mysql.connector.connect(**self.config)
-    
-    def extract_tables(self):
-        tables = []
-        try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")
-                    tables = [row[0] for row in cursor.fetchall()]
-        except mysql.connector.Error as e:
-            print(f"❌ Errore critico connessione MySQL: {e}")
-        return tables
-    
-    def extract_columns(self, table):
-        columns=[]
-        try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(f"DESCRIBE `{table}`")
-                    columns_info = cursor.fetchall()
-                    for col in columns_info:
-                            col_name = col[0]
-                            columns.append(col_name)
-        except mysql.connector.Error as e:
-            print(f"❌ Errore critico connessione MySQL: {e}")
-        return columns
-    
-    def extract_data(self, table, limit=100):
-        try:
-            with self._get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(f"SELECT * FROM `{table}`")
-                    rows = cursor.fetchall()
-                    columns = [desc[0] for desc in cursor.description]
-                    return columns, rows
-        except mysql.connector.Error as e:
-            print(f"❌ Errore: {e}")
-            return [], []
-
+        """Apre una connessione SQLite"""
+        if self.sqlite_path:
+            return sqlite3.connect(self.sqlite_path)
 
     def extract_schema(self) -> Dict:
-        """Estrae l'intero schema del database (tabelle, colonne, fks, data)."""
+        if self.sqlite_path:
+            return self._extract_from_sqlite()
+
+    # =========================
+    # 🔹 SQLITE
+    # =========================
+    def _extract_from_sqlite(self) -> Dict:
+
         schema = {
             "tables": {},
             "relationships": [],
             "valid_tables": set(),
             "valid_columns": {}
         }
-        
+
         try:
             with self._get_connection() as conn:
-                with conn.cursor() as cursor:
+                cursor = conn.cursor()
 
-                    tables = self.extract_tables()
-                    
-                    for table in tables:
-                        schema["valid_tables"].add(table.lower())
-                        schema["tables"][table] = {"columns": [], "sample_data": []}
-                        
-                        # 2. Recupera le colonne per tabella
-                        cursor.execute(f"DESCRIBE `{table}`")
-                        columns_info = cursor.fetchall()
-                        for col in columns_info:
-                            col_name = col[0]
-                            col_type = col[1]
-                            schema["tables"][table]["columns"].append(f"{col_name} [{col_type}]")
-                            schema["valid_columns"][f"{table}.{col_name}".lower()] = True
-                            
-                        try:
-                            cursor.execute(f"SELECT * FROM `{table}` LIMIT 2")
-                            rows = cursor.fetchall()
-                            if rows:
-                                schema["tables"][table]["sample_data"] = rows
-                        except Exception as e:
-                            print(f"⚠️ Attenzione: Impossibile estrarre sample data da {table} ({e})")
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                )
+                tables = [row[0] for row in cursor.fetchall()]
 
-                    db_name = self.config["database"]
-                    fk_query = f"""
-                        SELECT 
-                            TABLE_NAME, COLUMN_NAME,
-                            REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
-                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-                        WHERE REFERENCED_TABLE_SCHEMA = '{db_name}'
-                          AND TABLE_SCHEMA = '{db_name}';
-                    """
-                    cursor.execute(fk_query)
-                    fks = cursor.fetchall()
-                    for fk in fks:
-                        t1, c1, t2, c2 = fk
-                        schema["relationships"].append(f"{t1}.{c1} -> {t2}.{c2}")
-                        
-        except mysql.connector.Error as e:
-            print(f"❌ Errore critico connessione MySQL: {e}")
-            
+                for table in tables:
+                    schema["valid_tables"].add(table.lower())
+                    schema["tables"][table] = {
+                        "columns": [], "sample_data": []}
+                    cursor.execute(f"PRAGMA table_info('{table}')")
+                    columns_info = cursor.fetchall()
+
+                    for col in columns_info:
+                        col_name = col[1]
+                        # in SQLite il tipo può essere nullo per questo si usa come fallback text per passarlo all'llm
+                        col_type = col[2] if col[2] else "TEXT"
+
+                        schema["tables"][table]["columns"].append(
+                            f"{col_name} [{col_type}]")
+                        # Aggiungo tutte le colonne valide in modo da fare un check se llm ha delle allucinazioni
+                        schema["valid_columns"][f"{table}.{col_name}".lower(
+                        )] = True
+
+                    try:
+                        cursor.execute(f"SELECT * FROM '{table}' LIMIT 2")
+                        rows = cursor.fetchall()
+                        if rows:
+                            schema["tables"][table]["sample_data"] = rows
+                    except Exception:
+                        pass
+
+                    cursor.execute(f"PRAGMA foreign_key_list('{table}')")
+                    for fk in cursor.fetchall():
+                        ref_table = fk[2]
+                        from_col = fk[3]
+                        to_col = fk[4]
+                        # Aggiungo le relazioni da passare all'llm
+                        schema["relationships"].append(
+                            f"{table}.{from_col} -> {ref_table}.{to_col}")
+
+        except Exception as e:
+            print(f"❌ Errore SQLite: {e}")
+
         return schema
 
+    # =========================
+    # 🔹 FORMAT
+    # =========================
     def schema_to_text(self, schema: Dict) -> str:
-        """Converte il dict schema nel testo finale da infilare nei prompt."""
+        # Formatto il testo in md in quanto è la topologia che llm comprende meglio
         parts = ["### Tables:"]
-        
+
         for table_name, info in schema["tables"].items():
-            cols = info["columns"]
+            cols = [c.split(" ")[0] for c in info["columns"]]
             parts.append(f"{table_name}({', '.join(cols)})")
-            if info["sample_data"]:
-                rows_str = str(info["sample_data"])
-                if len(rows_str) > 250:
-                    rows_str = rows_str[:247] + "..."
-                parts.append(f"  Example rows: {rows_str}")
-        
+
+            sample_rows = info.get("sample_data", [])
+            if sample_rows:
+                parts.append("  Examples:")
+                for row in sample_rows[:2]:
+                    formatted_row = ", ".join(str(value) for value in row)
+                    parts.append(f"  - {formatted_row}")
+
         parts.append("")
         parts.append("### Relationships:")
+
         for rel in schema["relationships"]:
             parts.append(rel)
-            
+
         return "\n".join(parts)
