@@ -6,7 +6,20 @@ La versione consente: caricamento o selezione del database da UI, generazione da
 
 ## Video di utilizzo
 
-[![Video di utilizzo](Video/EsempioUtilizzo.gif)](Video/EsempioUtilizzo.mp4)
+
+
+https://github.com/user-attachments/assets/5f8f0a35-3b8f-44ef-99ef-0225a684caab
+
+
+
+
+
+
+
+
+
+
+
 
 ## Panoramica Rapida
 
@@ -96,3 +109,6 @@ Servizi:
 - Ollama API: `http://localhost:11434`
 
 
+
+- V1: schema fisso Northwind su MySQL
+- V2: schema variabile, scelto dall'utente su SQLite
