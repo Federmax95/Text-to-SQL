@@ -1,10 +1,10 @@
 # Text-to-SQL
 
-Repository per interrogare database SQLite con linguaggio naturale usando Ollama in locale.
+Repository for querying SQLite databases in natural language using Ollama locally.
 
-La versione consente: caricamento o selezione del database da UI, generazione di query `SELECT`, RAG su pool locale.
+The project supports: loading the database from the UI, generating `SELECT` queries, and RAG over a local pool.
 
-## Video di utilizzo
+## Usage Video
 
 
 
@@ -12,35 +12,35 @@ https://github.com/user-attachments/assets/5f8f0a35-3b8f-44ef-99ef-0225a684caab
 
 
 
-## Panoramica Rapida
+## Quick Overview
 
-| Entry point web | Entry point CLI | Database |
+| Web entry point | CLI entry point | Database |
 |---|---|---|
-| `python app/api2.py` | `python app/services/ask2.py` | SQLite (`.db`, `.sqlite`, `.sqlite3`) |
+| `python app/api.py` | `python app/services/ask.py` | SQLite (`.db`, `.sqlite`, `.sqlite3`) |
 
 UI web: `http://localhost:8000`
 
 
-## Prerequisiti
+## Requirements
 
 - Python 3.10+
-- Ollama installato e attivo su `http://localhost:11434`
-- Modello disponibile, ad esempio `qwen2.5-coder`
+- Ollama installed and running at `http://localhost:11434`
+- A model available, for example `qwen2.5-coder`
 
-Installa le dipendenze:
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Avvia Ollama in un terminale separato:
+Start Ollama in a separate terminal:
 
 ```bash
 ollama serve
 ollama pull qwen2.5-coder
 ```
 
-## Avvio
+## Run
 
 Web API + UI:
 
@@ -48,86 +48,85 @@ Web API + UI:
 python app/api.py
 ```
 
-CLI interattiva:
+Interactive CLI:
 
 ```bash
 python app/services/ask.py
 ```
 
-## Uso della UI
+## UI Usage
 
-- Carica un file SQLite dalla schermata iniziale oppure imposta manualmente il path del database.
-- Formati supportati in upload: `.sqlite`, `.sqlite3`, `.db`.
-- Dopo il caricamento, puoi inviare domande in linguaggio naturale e ottenere la query SQL con i risultati.
--- (La generazione di dataset sintetici è stata rimossa dall'interfaccia.)
+- Upload a SQLite file from the start screen or set the database path manually.
+- Supported upload formats: `.sqlite`, `.sqlite3`, `.db`.
+- After loading, you can ask questions in natural language and get the SQL query with the results.
 
-## Endpoint Principali
+## Main Endpoints
 
-- `GET /api/health` stato servizio
-- `POST /api/set-db` imposta un database SQLite da path
-- `POST /api/upload-db` carica un file SQLite dal browser
-- `POST /api/ask` domanda NL -> SQL + risultati
-- `POST /api/save` feedback utente per la query generata
-- `GET /api/pool` elenco esempi RAG
-- `POST /api/pool/execute` esegue una query `SELECT` dal pool
+- `GET /api/health` service status
+- `POST /api/set-db` set a SQLite database from a path
+- `POST /api/upload-db` upload a SQLite file from the browser
+- `POST /api/ask` NL question -> SQL + results
+- `POST /api/save` user feedback for the generated query
+- `GET /api/pool` list RAG examples
+- `POST /api/pool/execute` execute a `SELECT` query from the pool
 
 
-## Benchmark sul dataset Gretel.ai
+## Benchmark on the Gretel.ai Dataset
 
-È possibile eseguire il benchmark usando il dataset di esempio fornito per Gretel.ai (`data/gretelai_preview_200.csv`) e poi aggregare i risultati con lo script di riepilogo.
+You can run the benchmark using the Gretel.ai sample dataset (https://huggingface.co/datasets/gretelai/synthetic_text_to_sql) and then aggregate the results with the summary script.
 
-Prerequisiti:
+Requirements:
 
-- Ambiente Python con le dipendenze del progetto installate:
+- Python environment with the project dependencies installed:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-1) Eseguire il benchmark per il dataset Gretel.ai
+1) Run the benchmark for the Gretel.ai dataset
 
-Nel repository sono presenti script di benchmark in `benchmark/`. Per eseguire i test/benchmark che valutano il dataset Gretel.ai puoi lanciare lo script specifico o usare `pytest` sul file dedicato. Esempio:
+The repository includes benchmark scripts in `benchmark/`. To run the tests/benchmarks that evaluate the Gretel.ai dataset, you can launch the specific script:
 
 ```bash
-# esegue il test/benchmark per Gretel.ai (cartella: benchmark)
-pytest benchmark/test_gretelai_synthetic_text_to_sql.py -q
+# runs the Gretel.ai test/benchmark (folder: benchmark)
+python benchmark/test_gretelai_synthetic_text_to_sql.py -q
 ```
 
-1) Dove vengono salvati i risultati
+2) Where results are saved
 
-I tool di benchmark scrivono file JSON di risultato in una cartella `results/` (può variare a seconda dello script usato). Lo script di riepilogo `benchmark/summarize_benchmark_results.py` scansiona ricorsivamente una directory e trova tutti i file `*.json` per aggregarli.
+Benchmark tools write result JSON files to a `results/` folder. The summary script `benchmark/summarize_benchmark_results.py` scans a directory recursively and finds all `*.json` files to aggregate them.
 
-3) Estrarre e aggregare i risultati
+1) Extract and aggregate the results
 
-Usa `benchmark/summarize_benchmark_results.py` per generare tabelle aggregate in vari formati (MD, CSV, JSON, TEX, PDF). Lo script supporta l'opzione `--results-dir` per indicare la cartella da scansionare e `--output` per il file di destinazione.
+Use `benchmark/summarize_benchmark_results.py` to generate aggregated tables in several formats (MD, CSV, JSON, TEX, PDF). The script supports the `--results-dir` option to specify the folder to scan and `--output` for the destination file.
 
-Esempi:
+Examples:
 
 ```bash
-# Stampare la tabella Markdown su stdout
+# Print the Markdown table to stdout
 python benchmark/summarize_benchmark_results.py --results-dir results --format md
 
-# Salvare CSV
+# Save CSV
 python benchmark/summarize_benchmark_results.py --results-dir results --format csv --output results/summary.csv
 
-# Salvare JSON (utile per ulteriori filtraggi con jq/Python)
+# Save JSON (useful for further filtering with jq/Python)
 python benchmark/summarize_benchmark_results.py --results-dir results --format json --output results/summary.json
 
-# Generare PDF
+# Generate PDF
 python benchmark/summarize_benchmark_results.py --results-dir results --format pdf --output results/benchmark_summary.pdf
 ```
 
 ## Docker
 
-Per la V2 è disponibile `docker-compose.yml`.
+`docker-compose.yml` is available.
 
-Avvio:
+Run:
 
 ```bash
 docker-compose up --build
 ```
 
-Servizi:
+Services:
 
 - App: `http://localhost:8000`
 - Ollama API: `http://localhost:11434`
