@@ -1,3 +1,6 @@
+from app.services.retriever import Retriever
+from app.services.schema_adapter import SchemaAdapter
+from app.services.ask import process_question
 import sys
 import os
 import json
@@ -19,9 +22,6 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
-from app.services.ask import process_question
-from app.services.schema_adapter import SchemaAdapter
-from app.services.retriever import Retriever
 
 class QueryRequest(BaseModel):
     question: str
@@ -47,13 +47,8 @@ class DbPathRequest(BaseModel):
     db_path: str
 
 
-class SetSyntheticRequest(BaseModel):
-    use_synthetic: bool
-
-
 app_state = {}
 progress_state = {}
-synthetic_progress = {}
 UPLOAD_DIR = os.path.join(PROJECT_DIR, "data", "uploaded_dbs")
 
 
@@ -111,8 +106,6 @@ def _store_uploaded_db(filename: str, content: bytes) -> tuple[str, str]:
 
 def _load_database(db_path: str, db_name: str | None = None):
     """Inizializza adapter e schema per il DB selezionato."""
-    from app.core.config import SYNTHETIC_DB_PATH
-
     resolved_path = _resolve_db_path(db_path)
     if not os.path.exists(resolved_path):
         raise FileNotFoundError(f"File SQLite non trovato: {resolved_path}")
@@ -135,21 +128,6 @@ def _load_database(db_path: str, db_name: str | None = None):
     app_state["db_id"] = _normalize_db_id(resolved_path, app_state["db_name"])
     app_state["db_ready"] = True
 
-    # Reset synthetic dataset state quando si carica un nuovo DB
-    # Se il DB caricato non è il sintetico, reset e elimina il vecchio sintetico
-    if not resolved_path.endswith("synthetic_gaussian_output.db"):
-        app_state["use_synthetic"] = False
-        synthetic_progress.clear()
-        # Cancella il vecchio dataset sintetico se esiste
-        if os.path.exists(SYNTHETIC_DB_PATH):
-            try:
-                os.remove(SYNTHETIC_DB_PATH)
-            except Exception as e:
-                print(
-                    f"[WARN] Impossibile eliminare vecchio DB sintetico: {e}")
-    else:
-        # Se è il database sintetico, marca lo stato
-        app_state["use_synthetic"] = True
     app_state["db_ready"] = True
 
 
@@ -291,119 +269,9 @@ async def upload_db_file(request: Request, filename: str | None = None):
 
 
 @app.post("/api/set-synthetic-db")
-async def set_synthetic_db(request: SetSyntheticRequest):
-    """Carica il dataset sintetico generato se disponibile."""
-    from app.core.config import SYNTHETIC_DB_PATH
-
-    if not app_state.get("ready"):
-        raise HTTPException(
-            status_code=503,
-            detail="Server non inizializzato correttamente.",
-        )
-
-    try:
-        if not os.path.exists(SYNTHETIC_DB_PATH):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Dataset sintetico non trovato. Esegui prima GenerationSyntheticDataset.py"
-            )
-
-        await run_in_threadpool(_load_database, SYNTHETIC_DB_PATH, "synthetic_dataset")
-
-        # Attempt to load saved SDMetrics summary if present
-        sdmetrics_mean = None
-        metrics_file = f"{SYNTHETIC_DB_PATH}.metrics.json"
-        try:
-            if os.path.exists(metrics_file):
-                with open(metrics_file, "r", encoding="utf-8") as mf:
-                    m = json.load(mf)
-                    sdmetrics_mean = m.get("sdmetrics_mean")
-        except Exception:
-            sdmetrics_mean = None
-
-        response = {
-            "success": True,
-            "message": "Dataset sintetico caricato correttamente",
-            "db_name": app_state.get("db_name"),
-            "tables": len(app_state.get("valid_tables", [])),
-            "db_id": app_state.get("db_id"),
-        }
-
-        if sdmetrics_mean is not None:
-            try:
-                percent = round(float(sdmetrics_mean) * 100, 1)
-            except Exception:
-                percent = None
-            response["sdmetrics_mean"] = sdmetrics_mean
-            response["sdmetrics_percent"] = percent
-
-        return response
-    except Exception as e:
-        app_state["db_ready"] = False
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-@app.post("/api/generate-synthetic-db")
-async def generate_synthetic_db(request: Request):
-    """Genera un dataset sintetico dal database attualmente caricato."""
-    from app.core.config import SYNTHETIC_DB_PATH
-    from app.services.GenerationSyntheticDataset import generate_synthetic_dataset
-
-    if not app_state.get("ready"):
-        raise HTTPException(
-            status_code=503,
-            detail="Server non inizializzato correttamente.",
-        )
-
-    if not app_state.get("db_ready"):
-        raise HTTPException(
-            status_code=400,
-            detail="Nessun database caricato. Carica un database prima di generare il sintetico.",
-        )
-
-    try:
-        input_db = app_state.get("db_path")
-        if not input_db or not os.path.exists(input_db):
-            raise ValueError("Database di input non trovato o non valido.")
-
-        # Imposta il messaggio iniziale di progresso SUBITO
-        synthetic_progress["current"] = {
-            "step": "starting",
-            "message": "Avvio generazione dataset sintetico...",
-            "timestamp": time.time()
-        }
-
-        # Crea una callback per gli aggiornamenti di progresso
-        def progress_callback(step: str, message: str = ""):
-            synthetic_progress["current"] = {
-                "step": step,
-                "message": message,
-                "timestamp": time.time()
-            }
-
-        # Esegui la generazione in un thread separato per non bloccare l'event loop
-        result = await run_in_threadpool(generate_synthetic_dataset, input_db, SYNTHETIC_DB_PATH, 2.0, progress_callback)
-
-        if not result.get("success"):
-            raise ValueError(result.get("error", "Generazione fallita"))
-
-        return {
-            "success": True,
-            "message": "Dataset sintetico generato correttamente",
-            "output_db": result.get("output_db"),
-            "tables_count": result.get("tables_count"),
-            "pandera_pass": result.get("pandera_pass"),
-            "pandera_total": result.get("pandera_total"),
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Errore nella generazione del dataset sintetico: {str(e)}"
-        )
+async def set_synthetic_db():
+    raise HTTPException(
+        status_code=404, detail="Endpoint rimosso: supporto dataset sintetici non disponibile")
 
 
 @app.get("/api/progress")
@@ -440,36 +308,8 @@ async def get_progress(session_id: str):
 
 @app.get("/api/synthetic-progress")
 async def get_synthetic_progress():
-    """Endpoint SSE per il progresso della generazione sintetica."""
-    async def event_generator():
-        last_state = None
-        max_idle_time = 120  # 2 minuti per la generazione
-        start_time = time.time()
-
-        while True:
-            current_time = time.time()
-
-            state = synthetic_progress.get("current")
-            if state is not None and last_state != state:
-                payload = json.dumps(state, ensure_ascii=False)
-                yield f"data: {payload}\n\n"
-                last_state = dict(state)
-                start_time = current_time
-
-            # Interrompi se no progress da 2 minuti
-            if state is None and (current_time - start_time) > max_idle_time:
-                break
-
-            await asyncio.sleep(0.5)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
-    )
+    raise HTTPException(
+        status_code=404, detail="Endpoint rimosso: supporto dataset sintetici non disponibile")
 
 
 @app.post("/api/ask")

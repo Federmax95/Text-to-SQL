@@ -161,9 +161,7 @@
                 <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica Dataset</button>
             </div>
             <div class="mt-2">
-                <button class="btn btn-outline-primary d-none" onclick="generateSyntheticDataset()" id="synthetic-gen-btn">
-                    ✨ Genera Dataset Sintetico
-                </button>
+                <!-- Synthetic dataset generation removed -->
             </div>
             <div id="db-status" class="small text-muted">Scegli un file SQLite e premi "Carica Dataset".</div>
         </div>
@@ -209,19 +207,7 @@
                 </select>
             </div>
 
-            <!-- Modal di caricamento per generazione dataset sintetico -->
-            <div id="synthetic-loader" class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-none d-flex align-items-center justify-content-center" style="z-index: 9999;">
-                <div class="loader-container bg-white rounded-3 p-5" style="box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 500px;">
-                    <div class="spinner-pulse mb-4">
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                    </div>
-                    <h5 class="text-primary mb-2">Generazione Dataset Sintetico</h5>
-                    <p class="text-muted mb-4">Per favore attendi... questo potrebbe richiedere alcuni minuti</p>
-                    <div id="synthetic-progress-text" class="text-muted small">Inizializzazione...</div>
-                </div>
-            </div>
+            <!-- Synthetic dataset UI removed -->
 
             <div id="loader" class="text-center loading">
                 <div class="loader-container">
@@ -449,27 +435,19 @@
 
         async function refreshHealth() {
             const dbStatus = document.getElementById('db-status');
-            const syntheticBtn = document.getElementById('synthetic-gen-btn');
             try {
                 const response = await fetch('/api/health');
                 const res = await response.json();
                 if (res.db_ready) {
                     dbStatus.textContent = `Dataset attivo: ${res.db_name}`;
                     dbStatus.className = 'small text-success';
-                    // Mostra il pulsante di generazione solo se il DB è caricato e non è già sintetico
-                    if (res.db_name && !res.db_name.includes('synthetic')) {
-                        syntheticBtn.classList.remove('d-none');
-                        syntheticBtn.disabled = false;
-                    }
                 } else {
                     dbStatus.textContent = 'DB non configurato. Seleziona un file e premi Carica DB.';
                     dbStatus.className = 'small text-warning';
-                    syntheticBtn.classList.add('d-none');
                 }
             } catch (e) {
                 dbStatus.textContent = 'Impossibile leggere lo stato del DB.';
                 dbStatus.className = 'small text-danger';
-                syntheticBtn.classList.add('d-none');
             }
         }
 
@@ -480,7 +458,6 @@
         async function uploadDatabaseFile() {
             const fileInput = document.getElementById('db-file');
             const dbStatus = document.getElementById('db-status');
-            const syntheticBtn = document.getElementById('synthetic-gen-btn');
             const selectedFile = fileInput.files && fileInput.files[0];
 
             if (!selectedFile) {
@@ -501,115 +478,16 @@
                 if (response.ok && res.success) {
                     dbStatus.textContent = `Connesso: ${res.db_name} (${res.tables} tabelle)`;
                     dbStatus.className = 'small text-success';
-                    syntheticBtn.classList.remove('d-none');
-                    syntheticBtn.disabled = false;
                 } else {
                     dbStatus.textContent = res.detail || res.error || 'Errore durante la configurazione DB.';
                     dbStatus.className = 'small text-danger';
-                    syntheticBtn.classList.add('d-none');
                 }
             } catch (e) {
                 dbStatus.textContent = 'Errore di connessione al server.';
                 dbStatus.className = 'small text-danger';
             }
         }
-
-        async function generateSyntheticDataset() {
-            const dbStatus = document.getElementById('db-status');
-            const syntheticBtn = document.getElementById('synthetic-gen-btn');
-            const syntheticLoader = document.getElementById('synthetic-loader');
-            const syntheticProgressText = document.getElementById('synthetic-progress-text');
-            
-            // Blocca l'interfaccia
-            syntheticBtn.disabled = true;
-            syntheticLoader.classList.remove('d-none');
-            syntheticProgressText.textContent = 'Inizializzazione generazione...';
-            
-            // Inizi ad ascoltare il progresso
-            let progressEventSource = null;
-            
-            try {
-                // Avvia il listener del progresso
-                progressEventSource = new EventSource('/api/synthetic-progress');
-                progressEventSource.onmessage = function(event) {
-                    try {
-                        const state = JSON.parse(event.data);
-                        if (state.message) {
-                            syntheticProgressText.textContent = state.message;
-                        }
-                    } catch (e) {
-                        console.error("Errore parsing progresso:", e);
-                    }
-                };
-                progressEventSource.onerror = function() {
-                    if (progressEventSource) {
-                        progressEventSource.close();
-                        progressEventSource = null;
-                    }
-                };
-                
-                // Aspetta un po' che il listener sia pronto
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Avvia la generazione
-                const response = await fetch('/api/generate-synthetic-db', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({})
-                });
-                
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Errore nella generazione');
-                }
-                
-                const res = await response.json();
-                
-                // Aspetta un momento per far vedere il messaggio di completamento
-                syntheticProgressText.textContent = 'Dataset generato! Caricamento...';
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                
-                // Carica il dataset sintetico
-                const loadResponse = await fetch('/api/set-synthetic-db', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({use_synthetic: true})
-                });
-                
-                const loadRes = await loadResponse.json();
-                
-                if (loadRes.success) {
-                    let msg = `${loadRes.message} (${loadRes.tables} tabelle)`;
-                    if (loadRes.sdmetrics_percent !== undefined && loadRes.sdmetrics_percent !== null) {
-                        msg += ` — Accuratezza SDV: ${loadRes.sdmetrics_percent}%`;
-                    }
-                    dbStatus.textContent = msg;
-                    dbStatus.className = 'small text-success';
-                    syntheticBtn.classList.add('d-none');
-                } else {
-                    throw new Error(loadRes.error || 'Errore nel caricamento del dataset sintetico');
-                }
-                
-            } catch (e) {
-                dbStatus.textContent = `Errore: ${e.message}`;
-                dbStatus.className = 'small text-danger';
-                syntheticBtn.disabled = false;
-            } finally {
-                if (progressEventSource) {
-                    progressEventSource.close();
-                    progressEventSource = null;
-                }
-                syntheticLoader.classList.add('d-none');
-                // Se il pulsante è visibile, assicurati che sia abilitato per ulteriori azioni
-                try {
-                    if (syntheticBtn && !syntheticBtn.classList.contains('d-none')) {
-                        syntheticBtn.disabled = false;
-                    }
-                } catch (e) {
-                    console.warn('Impossibile aggiornare lo stato del pulsante sintetico:', e);
-                }
-            }
-        }
+        // Synthetic dataset generation removed from UI
 
         async function sendQuery() {
             currentQuestion = document.getElementById('question').value;

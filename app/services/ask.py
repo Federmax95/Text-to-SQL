@@ -8,6 +8,9 @@ Genera ESCLUSIVAMENTE query di lettura (SELECT).
 """
 
 
+from app.services.schema_adapter import SchemaAdapter
+from app.services.retriever import Retriever
+from app.core.config import LLM_MODEL, OLLAMA_URL, TOP_K
 import time
 from sqlglot import exp
 import re
@@ -21,12 +24,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(os.path.dirname(BASE_DIR))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
-
-from app.core.config import SYNTHETIC_DB_PATH
-from app.services.GenerationSyntheticDataset import generate_synthetic_dataset
-from app.core.config import LLM_MODEL, OLLAMA_URL, TOP_K
-from app.services.retriever import Retriever
-from app.services.schema_adapter import SchemaAdapter
 
 
 DEBUG = False  # True per stampare dettagli di debug, False per produzione
@@ -108,7 +105,7 @@ def build_baseline_prompt(question: str, schema_text: str) -> str:
             """
 
 
-def build_columns_prompt(question: str, schema_text: str, similar: str = "", reasoning: str = "") -> str:
+def build_columns_prompt(question: str, schema_text: str) -> str:
     return f"""You are a SQLite schema analyzer.
             {schema_text}
 
@@ -121,106 +118,152 @@ def build_columns_prompt(question: str, schema_text: str, similar: str = "", rea
             ### Question:
             {question}
 
-            ### Columns:
+            ### Output format:
+            - table1.column1
+            - table1.column2
+            - table2.column3
             """
 
 
-def build_sql_prompt(columns: str, question: str, schema_text: str, similar: str, reasoning: str = "") -> str:
-    return f"""You are an elite SQLite query generator.
+def build_sql_prompt(columns: str, question: str, similar: str) -> str:
+    return f"""You are an expert SQLite assistant. Generate ONLY a valid SELECT query.
+
+        ### Allowed columns (use only these, never invent):
+        {columns}
+
+        ### Similar example (use only as structure reference, do NOT copy values):
+        {similar}
+
+        ### User question:
+        {question}
+
+        ### STRICT RULES (violating any will cause failure):
+        1. **No extra filters** – add a WHERE clause ONLY if the question explicitly mentions a condition.
+        2. **Aggregation**:
+        - "how many rows" → COUNT(*)
+        - "how many X" (X is a column) → COUNT(X)
+        - "total / sum / overall" → SUM(column)
+        - "average / mean" → AVG(column)
+        - "how many downloads / revenue / amount" → SUM(column), NOT COUNT
+        3. **Group By** – if the question asks for "per X", "each Y", "by Z", you MUST use GROUP BY X/Y/Z.
+        4. **No alias in ORDER BY** – repeat the full expression, e.g. ORDER BY COUNT(*) DESC.
+        5. **No SELECT *** – list only columns needed to answer the question.
+        6. **No JOIN unless required** – use INNER JOIN only if columns from another table are explicitly needed.
+
+        ### Examples of correct queries:
+        - Q: "What is the total revenue from sales?" → SELECT SUM(revenue) FROM sales;
+        - Q: "How many accidents for SpaceX and Blue Origin?" → SELECT launch_provider, COUNT(*) FROM Accidents GROUP BY launch_provider;
+        - Q: "Maximum quantity of seafood sold in a single transaction" → SELECT MAX(quantity) FROM sales;
+
+        CRITICAL: Return ONLY the SQL query, no explanations, no markdown.
+        SQLite query:"""
+
+
+def is_result_semantically_correct(question: str, sql: str, result_data: dict, model: str = None) -> tuple[bool, str]:
+    """
+    Usa un LLM per stabilire se i risultati della query rispondono alla domanda.
+    Restituisce (corretto, spiegazione).
+    """
+    # Estrai un campione significativo dei risultati (max 10 righe)
+    data_sample = result_data.get("data", [])[:10]
+    columns = result_data.get("columns", [])
+
+    if not data_sample:
+        # Nessun risultato: spesso è un errore se la domanda prevede almeno una riga
+        return False, "La query non ha restituito alcuna riga, ma la domanda richiedeva un risultato."
+
+    # Crea una rappresentazione testuale dei risultati
+    import json
+    results_str = json.dumps([dict(zip(columns, row))
+                             for row in data_sample], indent=2, ensure_ascii=False)
+
+    prompt = f"""You are a strict judge. Given a user question and the SQL query executed, along with a sample of the results, decide if the results CORRECTLY answer the question.
+
+                ### User question:
+                {question}
+
+                ### Executed SQL:
+                {sql}
+
+                ### Sample of results (first {len(data_sample)} rows):
+                {results_str}
+
+                ### Rules:
+                - Answer ONLY "YES" if the results fully answer the question (even if the SQL style differs from an ideal query).
+                - Answer "NO" and give a ONE-SENTENCE explanation if:
+                - The results are empty when they shouldn't be.
+                - The results are missing required columns (e.g., question asks "per region" but results have no region column).
+                - The aggregation is wrong (e.g., question asks "total downloads" but results show a count of rows).
+                - The results contain extra filters not requested.
+                - Do NOT criticize formatting or column names unless they change the meaning.
+
+                ### Output format:
+                - First line: YES or NO
+                - Second line: explanation (only if NO)
+
+                Your answer:"""
+
+    response = call_ollama(prompt, model=model, retries=2)
+    lines = response.strip().splitlines()
+    if lines and lines[0].strip().upper() == "YES":
+        return True, ""
+    else:
+        explanation = lines[1] if len(
+            lines) > 1 else "Results do not answer the question"
+        return False, explanation
+
+
+def build_semantic_fix_prompt(question: str, sql: str, explanation: str, schema_text: str, columns: str) -> str:
+    return f"""The SQL query executed successfully but returned results that do NOT correctly answer the user's question.
+
+            ### Database schema:
             {schema_text}
 
-            ### Similar Example (structure only, do NOT copy values or filters):
-            {similar}
-
-            ### ━━ CRITICAL RULES ━━
-            - Generate ONLY valid SQLite syntax. No explanations. No markdown.
-            - ONLY use tables and columns listed in "Allowed Columns" below.
-            - Do NOT use `SELECT *` — list columns explicitly.
-            - NEVER use placeholders like <value>, <id>. Derive all values from the schema.
-            - VERIFY: Query must return the exact columns requested, no more, no less.
-
-            ### ━━ ORDER BY RULES ━━
-            - NEVER reference a SELECT alias in ORDER BY.
-            - Always REPEAT the full expression:
-                CORRECT: ORDER BY COUNT(*) DESC
-                WRONG:   ORDER BY enrollment_count DESC   ← alias not allowed in ORDER BY
-            - NEVER put aggregate functions (MIN, MAX, COUNT) inside GROUP BY.
-                CORRECT: GROUP BY t.transcript_id
-                WRONG:   GROUP BY MIN(t.transcript_id)
-            
-            ### ━━ STRICT SEMANTIC RULES ━━
-            - DO NOT add conditions not explicitly mentioned in the question.
-            - DO NOT infer filters from similar examples.
-            - ONLY use filters clearly present in the user question.
-
-            ### ━━ AGGREGATION RULES ━━
-            - "how many rows" → COUNT(*)
-            - "how many X" → COUNT(X)
-            - "total / sum / overall" → SUM(column)
-            - "total downloads / revenue / amount / cost" → SUM(column), NOT COUNT
-            - "average / mean" → AVG(column)
-
-            - "how many different/distinct" → COUNT(DISTINCT ...)
-            - "at least N" → HAVING COUNT(*) >= N
-            - "exactly N"  → HAVING COUNT(*) = N
-            - "most/top/highest" → ORDER BY COUNT(*) DESC LIMIT 1
-
-            IMPORTANT:
-            - If the question refers to a measurable quantity (downloads, revenue, cost),
-            use SUM(), NOT COUNT().
-
-            ### ━━ TEXT FILTER RULES ━━
-            - Use Sample DB Values section above to pick the EXACT string stored in the DB.
-            - When the question says "has the substring X" or "the word X":
-            → Use LIKE '%X%' where X is ONLY the key noun. Strip articles: "the computer" → '%computer%'
-            - Use LIKE '%value%' as a fallback when you are unsure of exact casing/spelling.
-            - For date columns: use BETWEEN or DATE() functions, NOT string comparison.
-
-            ### ━━ SELECT COLUMN RULES ━━
-            Return ONLY the columns explicitly requested in the question.
-            - Do NOT include IDs unless explicitly requested.
-            - Do NOT include helper columns.
-            If asked for "name and id" → return only those 2 columns, no helper columns.
-            - NEVER add extra aggregate aliases (COUNT(*) AS cnt, score, rank) unless explicitly asked.
-            - If the question asks for a name, ensure the column is a name (e.g., customer_name, not ID).
-
-            ### ━━ JOIN RULES ━━
-            - Use INNER JOIN by default unless the question mentions "all", "even if not", "including those without".
-            - LEFT JOIN when you need to keep rows from the left table even if no match.
-            - NEVER create Cartesian products — verify foreign keys match the question context.
-            - When joining multiple tables, ALWAYS use table aliases (AS t1, AS t2) and prefix ALL columns with table names.
-            - Example: SELECT t1.name, t2.value FROM table1 AS t1 JOIN table2 AS t2 ON t1.id = t2.id
-
-            ### ━━ ALIAS RULES ━━
-            - When using JOIN, always use aliases for table names.
-            - Prefix ALL columns with table aliases to avoid ambiguous column errors.
-
-            ### ━━ SET OPERATION RULES ━━
-            - For "X but not Y" or "X that have not" patterns → use EXCEPT
-            - For "both X and Y" patterns → use INTERSECT
-            - NEVER use UNION without understanding if duplicates should be removed.
-
-            ### ━━ VALIDATION CHECKLIST ━━
-            Before outputting the query:
-            1. ✓ All table names are in the Allowed Columns
-            2. ✓ All column names are in the Allowed Columns
-            3. ✓ No SELECT aliases referenced in ORDER BY
-            4. ✓ No aggregates inside GROUP BY
-            5. ✓ SELECT columns match what the question asks
-            6. ✓ WHERE filters use the correct operators (=, LIKE, BETWEEN, >=, etc)
-
-            ### Allowed Columns:
+            ### Allowed columns:
             {columns}
+
+            ### User question:
+            {question}
+
+            ### Original SQL:
+            {sql}
+
+            ### Why it's wrong:
+            {explanation}
+
+            ### Fix instructions:
+            - Do NOT change the meaning of the question.
+            - Correct ONLY the logical error described above.
+            - Keep the same tables and columns unless the error requires different ones.
+            - Return ONLY the corrected SQL query, no extra text.
+
+            ### Corrected SQL:
+            """
+
+
+def build_explain_prompt(query: str, error: str, question: str, schema_text: str) -> str:
+    return f"""You are a SQL expert analyzing a failed query.
+
+            ### Database Schema:
+            {schema_text}
 
             ### User Question:
             {question}
 
-            CRITICAL INSTRUCTIONS:
-            - Return ONLY and EXCLUSIVELY the raw SQL query.
-            - DO NOT add explanations, comments, conversational text, or greetings.
-            - DO NOT wrap the code in markdown formatting blocks (e.g., do NOT use ```sql or ```). Your output must be plain, directly executable text.
+            ### Generated SQL:
+            {query}
 
-            ### SQLite Query:
+            ### Execution Error or Wrong Result:
+            {error}
+
+            Explain in 2-3 sentences WHY the query is wrong. Focus on:
+            - wrong aggregation function (COUNT(*) vs COUNT(DISTINCT))
+            - alias referenced in ORDER BY without being defined there
+            - string filter mismatch (exact vs LIKE, articles in LIKE pattern)
+            - wrong JOIN type or missing table
+            - extra or missing columns in SELECT
+
+            ### Explanation:
             """
 
 
@@ -253,38 +296,13 @@ def build_fix_prompt(query: str, error: str, explanation: str, schema_text: str,
             ### Fixed Query:
             """
 
-
-def build_explain_prompt(query: str, error: str, question: str, schema_text: str) -> str:
-    return f"""You are a SQL expert analyzing a failed query.
-
-            ### Database Schema:
-            {schema_text}
-
-            ### User Question:
-            {question}
-
-            ### Generated SQL:
-            {query}
-
-            ### Execution Error or Wrong Result:
-            {error}
-
-            Explain in 2-3 sentences WHY the query is wrong. Focus on:
-            - wrong aggregation function (COUNT(*) vs COUNT(DISTINCT))
-            - alias referenced in ORDER BY without being defined there
-            - string filter mismatch (exact vs LIKE, articles in LIKE pattern)
-            - wrong JOIN type or missing table
-            - extra or missing columns in SELECT
-
-            ### Explanation:
-            """
-
-
 # =========================
 # VALIDAZIONE & FORMATTAZIONE
 # =========================
 
 # Controlla che le colonne che ha selezionato LLM esistano effettivamente
+
+
 def validate_columns(columns_raw: str, valid_tables: set, valid_columns: dict) -> list[str]:
     """Scarta colonne allucinate non presenti in SQLite. Estrae pattern table.column esatti."""
     valid_cols = []
@@ -382,36 +400,44 @@ def ask_db_path() -> str:
 # CORE APP
 # =========================
 
-def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schema_text: str, valid_tables: set, valid_columns: dict, progress_callback=None, previous_sql: str | None = None, user_feedback: str | None = None, current_db_id: str | None = None, Benchmark: bool | None = None, use_baseline: bool = False, llm_model: str | None = None) -> dict:
-    """Core logic per ottenere la answer sia dalla CLI che dalle API."""
+def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schema_text: str,
+                     valid_tables: set, valid_columns: dict, progress_callback=None,
+                     previous_sql: str | None = None, user_feedback: str | None = None,
+                     current_db_id: str | None = None, Benchmark: bool | None = None,
+                     use_baseline: bool = False, llm_model: str | None = None) -> dict:
+    """
+    Core logic per ottenere la answer sia dalla CLI che dalle API.
+    Integra validazione semantica post-esecuzione e auto-correzione.
+    """
     def notify_progress(step: str, message: str = ""):
         if progress_callback:
             progress_callback(step, message)
 
     augmented_question = q
-    reasoning = ""
-    max_attempts = 1 if use_baseline else 6
+    max_attempts = 1 if use_baseline else 6   # baseline: nessun tentativo di fix
     if user_feedback:
         augmented_question = (
             f"{q}\n\n"
             f"Additional user feedback about previous wrong SQL:\n{user_feedback.strip()}"
         )
 
+    # ========== FASE 1: Generazione SQL (baseline o RAG) ==========
     if use_baseline:
         notify_progress("step-4", "Generazione query MySQL (Baseline)...")
         print("⏳ Generazione Query Target (Baseline)...")
         p_sql = build_baseline_prompt(augmented_question, schema_text)
         try:
             sql = clean_sql(call_ollama(p_sql, model=llm_model))
+            return {"sql": sql}
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
     else:
+        # Pipeline RAG con selezione colonne
         notify_progress("step-1", "Ricerca pattern nel Vector DB...")
         print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
         k = 5
         similars = retriever.retrieve(q, top_k=k, db_id=current_db_id)
         max_sim = similars[0]["similarity"] if similars else 0
-
         if similars:
             print(
                 f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
@@ -425,64 +451,79 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                 f"{previous_sql}"
             )
 
-        # ── PHASE 2: Column Selection ──
+        # Selezione colonne
         notify_progress("step-2", "Identificazione colonne necessarie...")
         print("⏳ Identificazione colonne strettamente necessarie...")
         try:
-            p_cols = build_columns_prompt(
-                augmented_question, schema_text, sim_context, reasoning)
+            p_cols = build_columns_prompt(augmented_question, schema_text)
             cols_raw = call_ollama(p_cols, model=llm_model)
         except ConnectionError as ce:
             return {"success": False, "error": str(ce)}
 
         valid_cols = validate_columns(cols_raw, valid_tables, valid_columns)
         if not valid_cols:
+            # Fallback full schema
+            valid_cols = schema_text
             if DEBUG:
                 print(
                     "   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
             valid_cols = list(valid_columns.keys())
-        # ── PHASE 3: SQL Generation ──
+
+        # Generazione SQL
         notify_progress("step-3", "Generazione query MySQL...")
         print("⏳ Generazione Query Target...")
         p_sql = build_sql_prompt(
-            "\n".join(valid_cols), augmented_question, schema_text, sim_context, reasoning)
-        sql = clean_sql(call_ollama(p_sql))
+            "\n".join(valid_cols), augmented_question, sim_context)
+        sql = clean_sql(call_ollama(p_sql, model=llm_model))
 
+    # ========== FASE 2: Loop di auto-correzione (sintassi + semantica) ==========
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
             print(f"   🔄 AutoFix #{attempt - 1}...")
             notify_progress("step-3", f"Tentativo di fix #{attempt - 1}...")
-        if DEBUG:
-            print("SQL: ", sql)
 
-        # ── Syntax validation (solo SELECT) ──
+        # ---- 2.1 Controllo sintassi (solo SELECT) ----
         is_valid, validation_err = validate_sql_syntax(sql)
         if not is_valid:
             print(f"❌ Bloccato: {validation_err}")
             return {"success": False, "error": validation_err, "sql": sql}
 
-        # ── Execution ──
-        if (Benchmark is None):
-            res = execute_query(sql, adapter)
-            if res.get("success"):
-                print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
-                res["sql"] = sql
-                return res
+        res = execute_query(sql, adapter)
+        if not res.get("success"):
+            # Errore di esecuzione: fix sintattico/logico (come già facevi)
+            err = res["error"]
+            print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
+            if attempt < max_attempts:
+                explain = call_ollama(build_explain_prompt(
+                    sql, err, augmented_question, schema_text), model=llm_model)
+                if DEBUG:
+                    print(f"   💡 Diagnosi: {explain[:100]}...")
+                p_fix = build_fix_prompt(
+                    sql, err, explain, schema_text, question=augmented_question)
+                sql = clean_sql(call_ollama(p_fix, model=llm_model))
             else:
-                err = res["error"]
-                print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
-                if attempt < max_attempts:
-                    explain = call_ollama(build_explain_prompt(
-                        sql, err, augmented_question, schema_text), model=llm_model)
-                    if DEBUG:
-                        print(f"   💡 Diagnosi: {explain[:100]}...")
-                    p_fix = build_fix_prompt(
-                        sql, err, explain, schema_text, question=augmented_question)
-                    sql = clean_sql(call_ollama(p_fix, model=llm_model))
-                else:
-                    return {"success": False, "error": err, "sql": sql}
+                return {"success": False, "error": err, "sql": sql}
+            continue   # riprova con la nuova SQL
+
+        # ---- 2.3 Esecuzione riuscita -> validazione semantica ----
+        is_correct, explanation = is_result_semantically_correct(
+            augmented_question, sql, res, model="llama3.2:3b")
+        if is_correct:
+            print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
+            res["sql"] = sql
+            return res
         else:
-            return {"sql": sql}
+            print(
+                f"   ❌ Risultato semanticamente scorretto: {explanation[:200]}")
+            if attempt < max_attempts:
+                # Prepara le colonne consentite (se in modalità baseline, usa lista vuota)
+                cols_for_fix = "\n".join(
+                    valid_cols) if 'valid_cols' in locals() else ""
+                p_fix = build_semantic_fix_prompt(
+                    augmented_question, sql, explanation, schema_text, cols_for_fix)
+                sql = clean_sql(call_ollama(p_fix, model=llm_model))
+            else:
+                return {"success": False, "error": f"Errore semantico: {explanation}", "sql": sql}
 
     print("\n❌ Impossibile generare una query SQLite valida (Tentativi esauriti).")
     return {"success": False, "error": "Tentativi esauriti.", "sql": sql}
@@ -518,7 +559,8 @@ def interactive_loop():
         print(f"❌ Errore critico di boot: {e}")
         return
 
-    print(f"✅ Pronti. Connessione a {sqlite_path} OK ({len(valid_tables)} tabelle caricate con sample data).")
+    print(
+        f"✅ Pronti. Connessione a {sqlite_path} OK ({len(valid_tables)} tabelle caricate con sample data).")
     print("—" * 70)
     print("🗣️  Scrivi pure la tua domanda naturale (oppure 'esci' per chiudere)\n")
 
@@ -529,36 +571,6 @@ def interactive_loop():
             print("\n👋 Arrivederci!")
             break
         if not q:
-            continue
-        # Comandi CLI speciali
-        if q.lower() in ('g', 'genera', 'genera_sintetico'):
-            # Genera dataset sintetico dal DB corrente
-            try:
-                print('\n⏳ Avvio generazione dataset sintetico...')
-
-                def progress_cb(step, msg=''):
-                    print(f'  [{step}] {msg}')
-
-                out_db = SYNTHETIC_DB_PATH
-                res = generate_synthetic_dataset(sqlite_path, out_db, scale=2.0, progress_callback=progress_cb)
-                if res.get('success'):
-                    print(
-                        f"\n[OK] Dataset sintetico salvato in: {res.get('output_db', out_db)}")
-                    if ask_yes_no('Vuoi caricare ora il DB sintetico come DB attivo? [s/n]: '):
-                        # sovrascrivi sqlite_path e ricarica adapter
-                        sqlite_path = os.path.abspath(
-                            res.get('output_db', out_db))
-                        adapter = SchemaAdapter(sqlite_path=sqlite_path)
-                        schema_data = adapter.extract_schema()
-                        schema_text = adapter.schema_to_text(schema_data)
-                        valid_tables = schema_data['valid_tables']
-                        valid_columns = schema_data['valid_columns']
-                        print(
-                            f"[OK] DB sintetico caricato: {sqlite_path} ({len(valid_tables)} tabelle)")
-                else:
-                    print(f"[ERROR] Generazione fallita: {res.get('error')}")
-            except Exception as e:
-                print(f"[ERROR] Errore durante la generazione sintetica: {e}")
             continue
         if q.lower() in ('esci', 'exit', 'quit', 'q'):
             print("👋 Arrivederci!")

@@ -6,7 +6,7 @@ APP_DIR = os.path.dirname(CORE_DIR)
 PROJECT_DIR = os.path.dirname(APP_DIR)
 
 # Modello e Ollama
-LLM_MODEL = "qwen2.5-coder"
+LLM_MODEL = "qwen2.5-coder:latest"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
 
 # Cross-Domain RAG: Puntiamo al pool locale
@@ -23,8 +23,3 @@ TOP_K = 5
 # Risultati
 RESULTS_DIR = os.path.join(PROJECT_DIR, "results")
 
-# Dataset sintetico - salvato nella cartella uploaded_dbs
-UPLOADED_DBS_DIR = os.path.join(PROJECT_DIR, "data", "uploaded_dbs")
-SYNTHETIC_DB_PATH = os.path.join(
-    UPLOADED_DBS_DIR, "synthetic_gaussian_output.db")
-USE_SYNTHETIC_BY_DEFAULT = False  # Se True, usa dataset sintetico al startup

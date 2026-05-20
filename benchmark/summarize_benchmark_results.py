@@ -4,6 +4,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import os
+from collections import defaultdict
+import math
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_RESULTS_DIR = BASE_DIR / "results"
 
@@ -39,7 +42,6 @@ def _load_summary(file_path: Path, results_dir: Path) -> dict[str, Any] | None:
         results = []
 
     baseline_time_total, pipeline_time_total = _sum_result_times(results)
-    total_time_total = round(baseline_time_total + pipeline_time_total, 2)
 
     total_tests = int(data.get("total_tests") or len(results) or 0)
     baseline_matched = int(data.get("baseline_matched") or 0)
@@ -70,6 +72,12 @@ def _load_summary(file_path: Path, results_dir: Path) -> dict[str, Any] | None:
     baseline_wrong = total_tests - baseline_matched
     pipeline_wrong = total_tests - pipeline_matched
 
+    # Average times per test
+    baseline_time_avg = round(baseline_time_total /
+                              total_tests, 2) if total_tests else 0.0
+    pipeline_time_avg = round(pipeline_time_total /
+                              total_tests, 2) if total_tests else 0.0
+
     try:
         display_file = str(file_path.relative_to(
             results_dir)).replace("\\", "/")
@@ -94,8 +102,9 @@ def _load_summary(file_path: Path, results_dir: Path) -> dict[str, Any] | None:
         "pipeline_only_correct": pipeline_only_correct,
         "both_correct": both_correct,
         "baseline_time_total": baseline_time_total,
+        "baseline_time_avg": baseline_time_avg,
         "pipeline_time_total": pipeline_time_total,
-        "total_time_total": total_time_total,
+        "pipeline_time_avg": pipeline_time_avg,
     }
 
 
@@ -118,8 +127,9 @@ def _format_markdown_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -
         "baseline_acc_%",
         "pipeline_acc_%",
         "baseline_time_s",
+        "baseline_avg_s",
         "pipeline_time_s",
-        "total_time_s",
+        "pipeline_avg_s",
     ]
 
     def row_to_cells(row: dict[str, Any]) -> list[str]:
@@ -130,8 +140,9 @@ def _format_markdown_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -
             f'{row["baseline_accuracy"]:.2f}',
             f'{row["pipeline_accuracy"]:.2f}',
             _format_seconds(row["baseline_time_total"]),
+            _format_seconds(row.get("baseline_time_avg", 0.0)),
             _format_seconds(row["pipeline_time_total"]),
-            _format_seconds(row["total_time_total"]),
+            _format_seconds(row.get("pipeline_time_avg", 0.0)),
         ]
 
     lines = []
@@ -142,11 +153,14 @@ def _format_markdown_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -
         lines.append("| " + " | ".join(row_to_cells(row)) + " |")
 
     lines.append(
-        "| TOTAL | - | {tests} | - | - | {baseline} | {pipeline} | {total} |".format(
+        "| TOTAL | - | {tests} | - | - | {baseline} | {baseline_avg} | {pipeline} | {pipeline_avg} |".format(
             tests=totals["total_tests"],
             baseline=_format_seconds(totals["baseline_time_total"]),
+            baseline_avg=_format_seconds(
+                totals.get("baseline_time_avg_total", 0.0)),
             pipeline=_format_seconds(totals["pipeline_time_total"]),
-            total=_format_seconds(totals["total_time_total"]),
+            pipeline_avg=_format_seconds(
+                totals.get("pipeline_time_avg_total", 0.0)),
         )
     )
     return "\n".join(lines)
@@ -181,8 +195,9 @@ def _format_latex_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -> s
         "Baseline (\\%)",
         "Pipeline (\\%)",
         "Baseline (s)",
+        "Baseline avg (s)",
         "Pipeline (s)",
-        "Total (s)",
+        "Pipeline avg (s)",
     ]
 
     def fmt_row(r: dict[str, Any]) -> list[str]:
@@ -192,43 +207,10 @@ def _format_latex_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -> s
             f'{r.get("baseline_accuracy", 0):.2f}',
             f'{r.get("pipeline_accuracy", 0):.2f}',
             _format_seconds(r.get("baseline_time_total", 0.0)),
+            _format_seconds(r.get("baseline_time_avg", 0.0)),
             _format_seconds(r.get("pipeline_time_total", 0.0)),
-            _format_seconds(r.get("total_time_total", 0.0)),
+            _format_seconds(r.get("pipeline_time_avg", 0.0)),
         ]
-
-    # Build grouped summary for second table
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for r in rows:
-        model = str(r.get("model") or "UNKNOWN")
-        grouped.setdefault(model, []).append(r)
-
-    summary_rows: list[list[str]] = []
-    for model_name in sorted(grouped.keys()):
-        model_rows = grouped[model_name]
-        baseline_wrong = sum(int((r.get("total_tests") or 0) -
-                             (r.get("baseline_matched") or 0)) for r in model_rows)
-        baseline_correct = sum(
-            int(r.get("baseline_correct_total") or 0) for r in model_rows)
-        pipeline_wrong = sum(int((r.get("total_tests") or 0) -
-                             (r.get("pipeline_matched") or 0)) for r in model_rows)
-        pipeline_correct = sum(
-            int(r.get("pipeline_correct_total") or 0) for r in model_rows)
-        both_correct = sum(int(r.get("both_correct") or 0) for r in model_rows)
-        baseline_only_correct = sum(
-            int(r.get("baseline_only_correct") or 0) for r in model_rows)
-        pipeline_only_correct = sum(
-            int(r.get("pipeline_only_correct") or 0) for r in model_rows)
-
-        summary_rows.append([
-            _escape_latex(model_name),
-            str(baseline_wrong),
-            str(baseline_correct),
-            str(pipeline_wrong),
-            str(pipeline_correct),
-            str(both_correct),
-            str(baseline_only_correct),
-            str(pipeline_only_correct),
-        ])
 
     # Begin LaTeX document with packages suitable to fit tables inside margins
     lines: list[str] = []
@@ -246,7 +228,7 @@ def _format_latex_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -> s
     lines.append(r"\centering")
     lines.append(r"\small")
     # model column flexible (X), others right-aligned
-    lines.append(r"\begin{tabularx}{\textwidth}{X r r r r r r}")
+    lines.append(r"\begin{tabularx}{\textwidth}{X r r r r r r r}")
     lines.append(r"\toprule")
     lines.append(" & ".join(header) + r" \\")
     lines.append(r"\midrule")
@@ -255,51 +237,10 @@ def _format_latex_table(rows: list[dict[str, Any]], totals: dict[str, Any]) -> s
         cells = fmt_row(r)
         lines.append(" & ".join(cells) + r" \\")
 
-    # lines.append(r"\midrule")
-    # totals_cells = [
-    #     "TOTAL",
-    #     str(totals.get("total_tests", "")),
-    #     "-",
-    #     "-",
-    #     _format_seconds(totals.get("baseline_time_total", 0.0)),
-    #     _format_seconds(totals.get("pipeline_time_total", 0.0)),
-    #     _format_seconds(totals.get("total_time_total", 0.0)),
-    # ]
-    # lines.append(" & ".join(totals_cells) + r" \\")
+    # totals row omitted (total_time removed)
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabularx}")
     lines.append(r"\caption{Benchmark summary}")
-    lines.append(r"\end{table}")
-
-    # Second table: summary per model — placed below the first, same page if fits
-    summary_header = [
-        "Model",
-        "Baseline wrong",
-        "Baseline correct",
-        "Pipeline wrong",
-        "Pipeline correct",
-        "Both correct",
-        "Baseline only",
-        "Pipeline only",
-    ]
-
-    lines.append(r"\begin{table}[ht]")
-    lines.append(r"\centering")
-    lines.append(r"\scriptsize")
-    # Model column flexible, numeric columns fixed small widths to fit margins
-    num_col = r"{>{\raggedleft\arraybackslash}p{0.09\textwidth}}"
-    cols = " ".join([num_col] * 7)
-    lines.append(r"\begin{tabularx}{\textwidth}{X " + cols + r"}")
-    lines.append(r"\toprule")
-    lines.append(" & ".join(summary_header) + r" \\")
-    lines.append(r"\midrule")
-
-    for s in summary_rows:
-        lines.append(" & ".join(s) + r" \\")
-
-    lines.append(r"\bottomrule")
-    lines.append(r"\end{tabularx}")
-    lines.append(r"\caption{Riepilogo per modello}")
     lines.append(r"\end{table}")
 
     lines.append(r"\end{document}")
@@ -323,8 +264,10 @@ def _write_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
         "baseline_only_correct",
         "pipeline_only_correct",
         "baseline_time_total",
+        "baseline_time_avg",
         "pipeline_time_total",
-        "total_time_total",
+        "pipeline_time_avg",
+        # total_time_total removed
     ]
 
     with output_path.open("w", encoding="utf-8", newline="") as handle:
@@ -342,6 +285,130 @@ def _write_json(rows: list[dict[str, Any]], totals: dict[str, Any], output_path:
     }
     output_path.write_text(json.dumps(
         payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _generate_plots(results_dir: Path, out_dir: Path) -> None:
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except Exception:
+        raise SystemExit(
+            "Per generare i grafici installa matplotlib: pip install matplotlib numpy")
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Aggregate raw per-item data grouped by model and query_complexity
+    models: dict[str, dict[str, list[dict[str, Any]]]
+                 ] = defaultdict(lambda: defaultdict(list))
+    for file_path in _iter_result_files(results_dir):
+        try:
+            data = json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        model = str(data.get("model") or file_path.stem)
+        items = data.get("results") or []
+        for item in items:
+            complexity = str(item.get("query_complexity") or "UNKNOWN")
+            models[model][complexity].append(item)
+
+    for model_name, complexities in sorted(models.items()):
+        # Sort complexities by total count descending for stable layout
+        complexity_keys = sorted(
+            complexities.keys(), key=lambda k: -len(complexities[k]))
+
+        # Prepare data arrays
+        labels = complexity_keys
+        baseline_acc = []
+        pipeline_acc = []
+        match_counts = []
+        mismatch_counts = []
+        baseline_time_avg = []
+        pipeline_time_avg = []
+
+        for k in labels:
+            items = complexities[k]
+            total = len(items) or 1
+            b_correct = sum(1 for it in items if bool(
+                it.get("baseline_correct") or False))
+            p_correct = sum(1 for it in items if bool(
+                it.get("pipeline_correct") or False))
+            both = sum(1 for it in items if bool(it.get("baseline_correct")
+                       or False) and bool(it.get("pipeline_correct") or False))
+            match = both
+            mismatch = total - both
+
+            baseline_acc.append(100.0 * b_correct / total)
+            pipeline_acc.append(100.0 * p_correct / total)
+            match_counts.append(match)
+            mismatch_counts.append(mismatch)
+
+            b_time_sum = sum(_as_float(it.get("baseline_time_seconds") or it.get(
+                "baseline_time") or 0.0) for it in items)
+            p_time_sum = sum(_as_float(it.get("pipeline_time_seconds") or it.get(
+                "pipeline_time") or 0.0) for it in items)
+            baseline_time_avg.append(b_time_sum / total if total else 0.0)
+            pipeline_time_avg.append(p_time_sum / total if total else 0.0)
+
+        # Plot: accuracy (top), match/mismatch (bottom-left), avg time (bottom-right)
+        fig = plt.figure(constrained_layout=True, figsize=(14, 8))
+        gs = fig.add_gridspec(2, 2)
+
+        ax_acc = fig.add_subplot(gs[0, :])
+        x = np.arange(len(labels))
+        width = 0.35
+        ax_acc.bar(x - width/2, baseline_acc, width,
+                   label='Baseline', color='#2ecc71')
+        ax_acc.bar(x + width/2, pipeline_acc, width,
+                   label='Pipeline', color='#ff7f50')
+        ax_acc.set_xticks(x)
+        ax_acc.set_xticklabels(labels, rotation=45, ha='right')
+        ax_acc.set_ylabel('Accuracy (%)')
+        ax_acc.set_title(f'Accuracy per Query Complexity — {model_name}')
+        ax_acc.legend()
+        for i, v in enumerate(baseline_acc):
+            ax_acc.text(i - width/2, v + 1,
+                        f"{v:.1f}%", ha='center', va='bottom', fontsize=8)
+        for i, v in enumerate(pipeline_acc):
+            ax_acc.text(i + width/2, v + 1,
+                        f"{v:.1f}%", ha='center', va='bottom', fontsize=8)
+
+        ax_mm = fig.add_subplot(gs[1, 0])
+        ax_mm.bar(x, match_counts, label='Match', color='#2ecc71')
+        ax_mm.bar(x, mismatch_counts, bottom=match_counts,
+                  label='Mismatch', color='#e74c3c')
+        ax_mm.set_xticks(x)
+        ax_mm.set_xticklabels(labels, rotation=45, ha='right')
+        ax_mm.set_ylabel('Count')
+        ax_mm.set_title('Match / Mismatch per Query Complexity')
+        ax_mm.legend()
+
+        ax_time = fig.add_subplot(gs[1, 1])
+        ax_time.bar(x - width/2, baseline_time_avg, width,
+                    label='Baseline', color='#2ecc71')
+        ax_time.bar(x + width/2, pipeline_time_avg, width,
+                    label='Pipeline', color='#ff7f50')
+        ax_time.set_xticks(x)
+        ax_time.set_xticklabels(labels, rotation=45, ha='right')
+        ax_time.set_ylabel('Avg time (s)')
+        ax_time.set_title('Tempo Medio di Risposta per Query Complexity')
+        ax_time.legend()
+        for i, v in enumerate(baseline_time_avg):
+            ax_time.text(i - width/2, v + max(0.5, v*0.02),
+                         f"{v:.1f}s", ha='center', va='bottom', fontsize=8)
+        for i, v in enumerate(pipeline_time_avg):
+            ax_time.text(i + width/2, v + max(0.5, v*0.02),
+                         f"{v:.1f}s", ha='center', va='bottom', fontsize=8)
+
+        plt.suptitle(
+            f'Benchmark breakdown per Query Complexity — {model_name}', fontsize=12)
+
+        # Save
+        safe_name = model_name.replace(
+            ' ', '_').replace('/', '_').replace(':', '_')
+        out_path = out_dir / f"{safe_name}.png"
+        fig.savefig(out_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
 
 
 def main() -> None:
@@ -365,6 +432,16 @@ def main() -> None:
         default="md",
         help="Output format",
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate per-LLM plots grouped by query_complexity (PNG files)",
+    )
+    parser.add_argument(
+        "--plots-dir",
+        type=Path,
+        help="Output directory for generated plots (default: <results-dir>/plots)",
+    )
     args = parser.parse_args()
 
     if not args.results_dir.exists():
@@ -376,6 +453,13 @@ def main() -> None:
         if summary is not None:
             rows.append(summary)
 
+    # If plotting requested, generate per-LLM plots and exit
+    if args.plot:
+        plots_dir = args.plots_dir or (args.results_dir / "plots")
+        _generate_plots(args.results_dir, plots_dir)
+        print(f"Plots generate in: {plots_dir}")
+        return
+
     rows.sort(key=lambda row: (str(row["model"]).lower(), str(
         row["timestamp"]).lower(), str(row["file"]).lower()))
 
@@ -384,8 +468,7 @@ def main() -> None:
         "baseline_time_total": round(sum(float(row["baseline_time_total"]) for row in rows), 2),
         "pipeline_time_total": round(sum(float(row["pipeline_time_total"]) for row in rows), 2),
     }
-    totals["total_time_total"] = round(
-        totals["baseline_time_total"] + totals["pipeline_time_total"], 2)
+    # total_time_total removed (users requested baseline+pipeline column removed)
     # Additional totals for wrong and discordant counts
     totals["baseline_matched_total"] = sum(
         int(row.get("baseline_matched") or 0) for row in rows)
@@ -400,6 +483,16 @@ def main() -> None:
         int(row.get("baseline_only_correct") or 0) for row in rows)
     totals["pipeline_only_correct_total"] = sum(
         int(row.get("pipeline_only_correct") or 0) for row in rows)
+
+    # Average times across all tests (weighted by total_tests)
+    if totals["total_tests"]:
+        totals["baseline_time_avg_total"] = round(
+            totals["baseline_time_total"] / totals["total_tests"], 2)
+        totals["pipeline_time_avg_total"] = round(
+            totals["pipeline_time_total"] / totals["total_tests"], 2)
+    else:
+        totals["baseline_time_avg_total"] = 0.0
+        totals["pipeline_time_avg_total"] = 0.0
 
     if args.format == "md":
         content = _format_markdown_table(rows, totals)
@@ -451,8 +544,16 @@ def main() -> None:
         elems.append(Paragraph("Benchmark summary", styles["Title"]))
         elems.append(Spacer(1, 12))
 
-        header = ["model", "tests", "baseline accuracy (%)", "pipeline accuracy (%)",
-                  "baseline time (s)", "pipeline time (s)", "total time (s)"]
+        header = [
+            "model",
+            "tests",
+            "baseline accuracy (%)",
+            "pipeline accuracy (%)",
+            "baseline time (s)",
+            "baseline avg (s)",
+            "pipeline time (s)",
+            "pipeline avg (s)",
+        ]
         data_table = [header]
         for r in rows:
             data_table.append([
@@ -461,11 +562,12 @@ def main() -> None:
                 f'{r.get("baseline_accuracy", 0):.2f}',
                 f'{r.get("pipeline_accuracy", 0):.2f}',
                 _format_seconds(r.get("baseline_time_total", 0.0)),
+                _format_seconds(r.get("baseline_time_avg", 0.0)),
                 _format_seconds(r.get("pipeline_time_total", 0.0)),
-                _format_seconds(r.get("total_time_total", 0.0)),
+                _format_seconds(r.get("pipeline_time_avg", 0.0)),
             ])
 
-        rel = [0.25, 0.08, 0.13, 0.13, 0.13, 0.13, 0.15]
+        rel = [0.26, 0.08, 0.12, 0.12, 0.12, 0.08, 0.12, 0.10]
         col_widths = [usable_width * r for r in rel]
 
         header_para = [Paragraph(h, styles["BodyText"]) for h in header]
@@ -490,86 +592,6 @@ def main() -> None:
         ])
         table1.setStyle(style1)
         elems.append(table1)
-        elems.append(Spacer(1, 12))
-
-        # SECOND TABLE: Summary per LLM with wrong/discordant counts
-        # elems.append(Paragraph("Riepilogo per LLM", styles["Heading2"]))
-        # elems.append(Spacer(1, 6))
-
-        # Group rows by model name
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for r in rows:
-            model = str(r.get("model") or "UNKNOWN")
-            grouped.setdefault(model, []).append(r)
-
-        summary_header = [
-            "model",
-            "baseline wrong",
-            "baseline correct",
-            "pipeline wrong",
-            "pipeline correct",
-            "both correct",
-            "baseline only",
-            "pipeline only",
-        ]
-        summary_data = [summary_header]
-
-        for model_name in sorted(grouped.keys()):
-            model_rows = grouped[model_name]
-            baseline_wrong = sum(int((r.get("total_tests") or 0) -
-                                 (r.get("baseline_matched") or 0)) for r in model_rows)
-            baseline_correct = sum(int(r.get("baseline_correct_total") or 0)
-                                   for r in model_rows)
-            pipeline_wrong = sum(int((r.get("total_tests") or 0) -
-                                 (r.get("pipeline_matched") or 0)) for r in model_rows)
-            pipeline_correct = sum(int(r.get("pipeline_correct_total") or 0)
-                                   for r in model_rows)
-            both_correct = sum(int(r.get("both_correct") or 0)
-                               for r in model_rows)
-            baseline_only_correct = sum(
-                int(r.get("baseline_only_correct") or 0) for r in model_rows)
-            pipeline_only_correct = sum(
-                int(r.get("pipeline_only_correct") or 0) for r in model_rows)
-
-            summary_data.append([
-                model_name,
-
-                str(baseline_wrong),
-                str(baseline_correct),
-                str(pipeline_wrong),
-                str(pipeline_correct),
-                str(both_correct),
-                str(baseline_only_correct),
-                str(pipeline_only_correct),
-            ])
-
-        rel_summary = [0.20, 0.10, 0.10, 0.10, 0.10, 0.10, 0.15, 0.15]
-        col_widths_summary = [usable_width * r for r in rel_summary]
-
-        header_para_summary = [
-            Paragraph(h, styles["BodyText"]) for h in summary_header]
-        wrapped_data_summary = [header_para_summary]
-        for row in summary_data[1:]:
-            model_para = Paragraph(str(row[0]), styles["BodyText"]) if row[0] else Paragraph(
-                "", styles["BodyText"])
-            new_row = [model_para] + \
-                [Paragraph(str(c), styles["BodyText"]) for c in row[1:]]
-            wrapped_data_summary.append(new_row)
-
-        table2 = Table(wrapped_data_summary,
-                       colWidths=col_widths_summary, repeatRows=1)
-        style2 = TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-            ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ])
-        table2.setStyle(style2)
-        elems.append(table2)
 
         doc.build(elems, onFirstPage=_set_pdf_metadata,
                   onLaterPages=_set_pdf_metadata)

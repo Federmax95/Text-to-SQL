@@ -95,6 +95,7 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
     schema_text = str(sample.get("sql_context", "")).strip()
     gold_sql = sample["sql"]
     prompt = sample["sql_prompt"]
+    query_complexity = sample.get("sql_complexity", "")
 
     temp_dir = os.path.join(BASE_DIR, "temp_dbs")
     os.makedirs(temp_dir, exist_ok=True)
@@ -104,6 +105,7 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
     result = {
         "prompt": prompt,
         "gold_sql": gold_sql,
+        "query_complexity": query_complexity,
         "status": None,
         "df": None,
         "error": None,
@@ -171,7 +173,6 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
         schema_text=schema_text,
         valid_tables=valid_tables,
         valid_columns=valid_columns,
-        Benchmark=True,
         use_baseline=True
     )
     result["baseline_time"] = round(time.time() - start_time, 2)
@@ -197,7 +198,6 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
         schema_text=schema_text,
         valid_tables=valid_tables,
         valid_columns=valid_columns,
-        Benchmark=True,
         use_baseline=False
     )
     result["pipeline_time"] = round(time.time() - start_time, 2)
@@ -226,6 +226,8 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
 
 def print_result(i: int, r: dict) -> None:
     print(f"Q{i + 1}: {r['prompt']}")
+    if r.get("query_complexity"):
+        print(f"Complexity: {r['query_complexity']}")
     print(f"Status : {r['status'].value}")
     if r["error"]:
         print(f"Error  : {r['error']}")
@@ -395,6 +397,7 @@ def main() -> None:
 
         results_list.append({
             "question": r["prompt"],
+            "query_complexity": r.get("query_complexity", ""),
             "gold_sql": r["gold_sql"],
             "baseline_sql": r["baseline_sql"],
             "baseline_correct": r["baseline_correct"],
