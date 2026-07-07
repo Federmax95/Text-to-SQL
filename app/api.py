@@ -1,6 +1,3 @@
-from app.services.retriever import Retriever
-from app.services.schema_adapter import SchemaAdapter
-from app.services.ask import process_question
 import sys
 import os
 import json
@@ -22,6 +19,10 @@ PROJECT_DIR = os.path.dirname(BASE_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
+from app.services.retriever import Retriever
+from app.services.schema_adapter import SchemaAdapter
+from app.services.ask import process_question
+
 
 class QueryRequest(BaseModel):
     question: str
@@ -30,6 +31,7 @@ class QueryRequest(BaseModel):
     user_feedback: str | None = None
     use_baseline: bool = False
     llm_model: str | None = None
+    additional_context: str | None = None
 
 
 class SaveRequest(BaseModel):
@@ -345,6 +347,7 @@ async def ask_question(request: QueryRequest):
         current_db_id=app_state.get("db_id"),
         use_baseline=request.use_baseline,
         llm_model=request.llm_model,
+        additional_context=request.additional_context,
     )
 
     if session_id in progress_state:

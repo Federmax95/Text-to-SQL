@@ -11,6 +11,7 @@ from datetime import datetime
 from enum import Enum
 import pandas as pd
 from datasets import load_dataset
+import re
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
@@ -35,7 +36,7 @@ class ResultStatus(Enum):
     SQL_ERROR = "❌ SQL_ERROR"
 
 
-def check_df_equal(df1: pd.DataFrame, df2: pd.DataFrame) -> bool:
+def check_df_equal(df1: pd.DataFrame, df2: pd.DataFrame, query: str = "") -> bool:
     if df1 is None or df2 is None:
         return False
     if df1.shape != df2.shape:
@@ -56,11 +57,13 @@ def check_df_equal(df1: pd.DataFrame, df2: pd.DataFrame) -> bool:
             # 3. Ordina le colonne (ignora column order)
             df = df.reindex(sorted(df.columns), axis=1)
             
-            # 4. Ordina le righe (ignora row order)
-            df = df.sort_values(
-                by=list(df.columns), 
-                key=lambda x: x.astype(str)
-            ).reset_index(drop=True)
+            # 4. Ordina le righe se non è esplicitamente richiesto un ORDER BY
+            has_order_by = bool(re.search(r'\border\s+by\b', query, re.IGNORECASE))
+            if not has_order_by:
+                df = df.sort_values(
+                    by=list(df.columns), 
+                    key=lambda x: x.astype(str)
+                ).reset_index(drop=True)
             
             return df
 
@@ -183,7 +186,7 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
             conn = sqlite3.connect(db_path)
             df_base = pd.read_sql_query(baseline_sql, conn)
             result["baseline_df"] = df_base
-            result["baseline_correct"] = check_df_equal(df_gold, df_base)
+            result["baseline_correct"] = check_df_equal(df_gold, df_base, gold_sql)
         except:
             pass
         finally:
@@ -208,7 +211,7 @@ def run_sample(sample: dict, retriever: Retriever) -> dict:
             conn = sqlite3.connect(db_path)
             df_pipe = pd.read_sql_query(pipeline_sql, conn)
             result["pipeline_df"] = df_pipe
-            result["pipeline_correct"] = check_df_equal(df_gold, df_pipe)
+            result["pipeline_correct"] = check_df_equal(df_gold, df_pipe, gold_sql)
         except:
             pass
         finally:

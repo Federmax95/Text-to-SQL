@@ -396,6 +396,18 @@ def ask_db_path() -> str:
     return os.path.abspath(chosen)
 
 
+def ask_context_path() -> str | None:
+    """Chiede il path di un file txt per aggiungere contesto extra."""
+    raw = input(f"📄 Path file di contesto (.txt) [Opzionale, premi Invio per saltare]: ").strip()
+    if not raw:
+        return None
+    chosen = raw.strip().strip('"').strip("'")
+    chosen = os.path.expandvars(os.path.expanduser(chosen))
+    if not os.path.isabs(chosen):
+        chosen = os.path.join(PROJECT_DIR, chosen)
+    return os.path.abspath(chosen)
+
+
 # =========================
 # CORE APP
 # =========================
@@ -404,7 +416,9 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                      valid_tables: set, valid_columns: dict, progress_callback=None,
                      previous_sql: str | None = None, user_feedback: str | None = None,
                      current_db_id: str | None = None, Benchmark: bool | None = None,
-                     use_baseline: bool = False, llm_model: str | None = None) -> dict:
+                     use_baseline: bool = False, use_rag: bool = True, use_cols: bool = True,
+                     max_attempts_override: int | None = None, llm_model: str | None = None,
+                     use_improved_prompt: bool = True, additional_context: str | None = None) -> dict:
     """
     Core logic per ottenere la answer sia dalla CLI che dalle API.
     Integra validazione semantica post-esecuzione e auto-correzione.
@@ -414,27 +428,31 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
             progress_callback(step, message)
 
     augmented_question = q
-    max_attempts = 1 if use_baseline else 6   # baseline: nessun tentativo di fix
+    judge_calls = 0
+    max_attempts = max_attempts_override if max_attempts_override is not None else (1 if use_baseline else 6)
+    
+    if use_baseline:
+        use_rag = False
+        use_cols = False
+        use_improved_prompt = False
+
     if user_feedback:
         augmented_question = (
             f"{q}\n\n"
             f"Additional user feedback about previous wrong SQL:\n{user_feedback.strip()}"
         )
 
-    # ========== FASE 1: Generazione SQL (baseline o RAG) ==========
-    if use_baseline:
-        notify_progress("step-4", "Generazione query MySQL (Baseline)...")
-        print("⏳ Generazione Query Target (Baseline)...")
-        p_sql = build_baseline_prompt(augmented_question, schema_text)
-        try:
-            sql = clean_sql(call_ollama(p_sql, model=llm_model))
-            return {"sql": sql}
-        except ConnectionError as ce:
-            return {"success": False, "error": str(ce)}
-    else:
-        # Pipeline RAG con selezione colonne
-        notify_progress("step-1", "Ricerca pattern nel Vector DB...")
-        print("\n⏳ Ricerca pattern logici analoghi nel Vector DB...")
+    if additional_context:
+        augmented_question = (
+            f"{augmented_question}\n\n"
+            f"### Additional Context:\n{additional_context.strip()}"
+        )
+
+    # ========== FASE 1: Generazione SQL ==========
+    notify_progress("step-1", "Ricerca pattern nel Vector DB...")
+    sim_context = ""
+    if use_rag:
+        print("\n🔍 Ricerca pattern logici analoghi nel Vector DB...")
         k = 5
         similars = retriever.retrieve(q, top_k=k, db_id=current_db_id)
         max_sim = similars[0]["similarity"] if similars else 0
@@ -442,39 +460,50 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
             print(
                 f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
             sim_context = retriever.format_examples(similars)
-        else:
-            sim_context = ""
-        if previous_sql:
-            sim_context = (
-                f"{sim_context}\n\n"
-                "/* Previous wrong SQL (do not repeat this error) */\n"
-                f"{previous_sql}"
-            )
+    
+    if previous_sql:
+        sim_context = (
+            f"{sim_context}\n\n"
+            "/* Previous wrong SQL (do not repeat this error) */\n"
+            f"{previous_sql}"
+        )
 
-        # Selezione colonne
+    # Selezione colonne
+    valid_cols = list(valid_columns.keys())
+    if use_cols:
         notify_progress("step-2", "Identificazione colonne necessarie...")
-        print("⏳ Identificazione colonne strettamente necessarie...")
+        print("🚀 Identificazione colonne strettamente necessarie...")
         try:
             p_cols = build_columns_prompt(augmented_question, schema_text)
             cols_raw = call_ollama(p_cols, model=llm_model)
+            valid_cols = validate_columns(cols_raw, valid_tables, valid_columns)
+            if not valid_cols:
+                if DEBUG:
+                    print(
+                        "   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
+                valid_cols = list(valid_columns.keys())
         except ConnectionError as ce:
-            return {"success": False, "error": str(ce)}
+            return {"success": False, "error": str(ce), "judge_calls": judge_calls}
 
-        valid_cols = validate_columns(cols_raw, valid_tables, valid_columns)
-        if not valid_cols:
-            # Fallback full schema
-            valid_cols = schema_text
-            if DEBUG:
-                print(
-                    "   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
-            valid_cols = list(valid_columns.keys())
-
-        # Generazione SQL
-        notify_progress("step-3", "Generazione query MySQL...")
-        print("⏳ Generazione Query Target...")
+    # Generazione SQL
+    notify_progress("step-3", "Generazione query MySQL...")
+    print("⏳ Generazione Query Target...")
+    
+    if not use_improved_prompt:
+        q_for_baseline = augmented_question
+        if use_cols and valid_cols:
+            q_for_baseline += "\n\nConsider ONLY these tables/columns to answer:\n" + "\n".join(valid_cols)
+        if use_rag and sim_context:
+            q_for_baseline += "\n\nReference structure from these similar examples (do not copy values):\n" + sim_context
+        p_sql = build_baseline_prompt(q_for_baseline, schema_text)
+    else:
         p_sql = build_sql_prompt(
             "\n".join(valid_cols), augmented_question, sim_context)
+            
+    try:
         sql = clean_sql(call_ollama(p_sql, model=llm_model))
+    except ConnectionError as ce:
+        return {"success": False, "error": str(ce), "judge_calls": judge_calls}
 
     # ========== FASE 2: Loop di auto-correzione (sintassi + semantica) ==========
     for attempt in range(1, max_attempts + 1):
@@ -486,7 +515,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         is_valid, validation_err = validate_sql_syntax(sql)
         if not is_valid:
             print(f"❌ Bloccato: {validation_err}")
-            return {"success": False, "error": validation_err, "sql": sql}
+            return {"success": False, "error": validation_err, "sql": sql, "judge_calls": judge_calls}
 
         res = execute_query(sql, adapter)
         if not res.get("success"):
@@ -502,15 +531,24 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                     sql, err, explain, schema_text, question=augmented_question)
                 sql = clean_sql(call_ollama(p_fix, model=llm_model))
             else:
-                return {"success": False, "error": err, "sql": sql}
+                return {"success": False, "error": err, "sql": sql, "judge_calls": judge_calls}
             continue   # riprova con la nuova SQL
 
         # ---- 2.3 Esecuzione riuscita -> validazione semantica ----
-        is_correct, explanation = is_result_semantically_correct(
-            augmented_question, sql, res, model="llama3.2:3b")
+        if max_attempts == 1:
+            # Bypass judge per le ablazioni base
+            if DEBUG:
+                print(f"\n✅ QUERY GENERATA (Bypass Judge):\n   {sql}")
+            res["sql"] = sql
+            res["judge_calls"] = judge_calls
+            return res
+
+        judge_calls += 1
+        is_correct, explanation = is_result_semantically_correct(augmented_question, sql, res, model="llama3.2:3b")
         if is_correct:
             print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
             res["sql"] = sql
+            res["judge_calls"] = judge_calls
             return res
         else:
             print(
@@ -523,10 +561,10 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                     augmented_question, sql, explanation, schema_text, cols_for_fix)
                 sql = clean_sql(call_ollama(p_fix, model=llm_model))
             else:
-                return {"success": False, "error": f"Errore semantico: {explanation}", "sql": sql}
+                return {"success": False, "error": f"Errore semantico: {explanation}", "sql": sql, "judge_calls": judge_calls}
 
     print("\n❌ Impossibile generare una query SQLite valida (Tentativi esauriti).")
-    return {"success": False, "error": "Tentativi esauriti.", "sql": sql}
+    return {"success": False, "error": "Tentativi esauriti.", "sql": sql, "judge_calls": judge_calls}
 
 
 # =========================
@@ -541,12 +579,23 @@ def interactive_loop():
     print("=" * 70)
 
     print("\n[inizializzazione in corso... attendere]")
+    context_text = None
     try:
         retriever = Retriever()
         sqlite_path = ask_db_path()
         if not os.path.exists(sqlite_path):
             print(f"❌ File SQLite non trovato: {sqlite_path}")
             return
+            
+        context_path = ask_context_path()
+        if context_path:
+            if os.path.exists(context_path):
+                with open(context_path, 'r', encoding='utf-8') as f:
+                    context_text = f.read()
+                print(f"✅ Contesto caricato: {context_path}")
+            else:
+                print(f"⚠️ File di contesto non trovato: {context_path}. Verrà ignorato.")
+                
         adapter = SchemaAdapter(sqlite_path=sqlite_path)
         schema_data = adapter.extract_schema()
         schema_text = adapter.schema_to_text(schema_data)
@@ -579,7 +628,8 @@ def interactive_loop():
             os.path.basename(sqlite_path))[0].lower()
         res = process_question(q, retriever, adapter,
                                schema_text, valid_tables, valid_columns,
-                               current_db_id=current_db_id)
+                               current_db_id=current_db_id,
+                               additional_context=context_text)
         if res["success"]:
             print("\n📊 RISULTATI SQLite:")
             print(format_results(res))
