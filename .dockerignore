@@ -1,0 +1,24 @@
+# Git
+.git
+.gitignore
+
+# Dati pesanti non necessari nel container
+spider_data
+data/pool
+data/uploaded_dbs
+data/datahub
+data/semantic_cache
+data/*.db
+data/*.csv
+data/*.json
+
+# File di sviluppo
+OLD
+Relazione
+benchmark
+__pycache__
+*.pyc
+*.pyo
+aggiustamenti.txt
+diagramma_*.html
+temp_dbs

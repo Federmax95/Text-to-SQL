@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Crea le cartelle di runtime necessarie
+RUN mkdir -p /app/data/uploaded_dbs /app/data/pool
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
