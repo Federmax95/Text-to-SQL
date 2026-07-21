@@ -38,7 +38,7 @@ https://github.com/user-attachments/assets/e9c66e03-d062-4ca9-8e58-80bd3dec43bd
 | 🌐 **Web UI + REST API** | Full-featured web interface and API endpoints for integration |
 | 💻 **Interactive CLI** | Terminal-based interface for quick queries without a browser |
 | 🐳 **Docker Ready** | One-command deployment with Docker Compose (app + Ollama) |
-| 📊 **Built-in Benchmarks** | Evaluate accuracy against Gretel.ai and Spider datasets |
+| 📊 **Built-in Benchmarks** | Evaluate accuracy against Gretel.ai |
 
 ---
 
@@ -100,7 +100,6 @@ Text-to-SQL/
 │       └── pool.html           # RAG pool management page
 ├── benchmark/
 │   ├── test_gretelai_*.py      # Benchmark on the Gretel.ai dataset
-│   ├── test_spider.py          # Benchmark on the Spider dataset
 │   ├── benchmark_ablation.py   # Ablation study for pipeline components
 │   └── summarize_benchmark_results.py  # Aggregate results → MD / CSV / JSON / PDF
 ├── data/                       # Uploaded databases & RAG pool (gitignored)
