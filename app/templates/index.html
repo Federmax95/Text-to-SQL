@@ -2,13 +2,16 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Northwind Text-to-SQL</title>
+    <title>Text-to-SQL</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        body {
+            background-color: #f8f9fa;
+        }
+
         .loading { display: none; }
         #results-table { margin-top: 20px; }
 
-        /* Animazione loader */
         .loader-container {
             text-align: center;
             padding: 40px 20px;
@@ -54,29 +57,23 @@
             }
         }
 
-        /* Messaggi di progresso */
         .progress-messages {
             margin-top: 30px;
             text-align: left;
         }
 
         .progress-item {
-            margin: 15px 0;
-            padding: 12px 15px;
+            margin: 8px 0;
+            padding: 10px 15px;
             border-left: 3px solid #0d6efd;
             background-color: #f8f9fa;
             border-radius: 4px;
             opacity: 0;
-            animation: fadeInSlide 0.6s ease-out forwards;
-            font-size: 14px;
+            animation: fadeInSlide 0.4s ease-out forwards;
+            font-size: 13px;
             display: flex;
             align-items: center;
             gap: 10px;
-        }
-
-        .progress-item.pending {
-            border-left-color: #ffc107;
-            background-color: #fff8e1;
         }
 
         .progress-item.completed {
@@ -84,16 +81,21 @@
             background-color: #e8f5e9;
         }
 
+        .progress-item.error {
+            border-left-color: #dc3545;
+            background-color: #fce4ec;
+        }
+
+        .progress-item.warning {
+            border-left-color: #ffc107;
+            background-color: #fff8e1;
+        }
+
         .progress-item.active {
             border-left-color: #0d6efd;
             background-color: #e7f1ff;
             font-weight: 500;
         }
-
-        .progress-item:nth-child(1) { animation-delay: 0.1s; }
-        .progress-item:nth-child(2) { animation-delay: 0.5s; }
-        .progress-item:nth-child(3) { animation-delay: 0.9s; }
-        .progress-item:nth-child(4) { animation-delay: 1.3s; }
 
         @keyframes fadeInSlide {
             from {
@@ -116,28 +118,100 @@
             animation: none;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
         .progress-text {
             flex: 1;
+        }
+
+        .db-picker-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .db-file-name {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .reasoning-toggle-row {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
+
+        body.generating [data-hide-on-generate] {
+            display: none !important;
         }
     </style>
 </head>
 <body class="bg-light">
     <div class="container py-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="mb-0">📊 Northwind Text-to-SQL</h1>
+        <div class="d-flex justify-content-between align-items-center mb-4" data-hide-on-generate>
+            <h1 class="mb-0">Text-to-SQL</h1>
             <a href="/pool" class="btn btn-outline-secondary">Apri Pool Query</a>
         </div>
-        
+
+        <div class="card p-4 shadow-sm mb-3" data-hide-on-generate>
+            <h5 class="mb-3">Connessione Database SQLite</h5>
+            <div class="db-picker-row mb-2">
+                <input type="file" id="db-file" accept=".sqlite,.sqlite3,.db" class="d-none">
+                <button class="btn btn-outline-secondary" type="button" onclick="openDbPicker()">📎 Scegli Dataset</button>
+                <span id="db-file-name" class="db-file-name">Nessun file selezionato</span>
+                <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica Dataset</button>
+            </div>
+            <div class="mt-2">
+                <!-- Synthetic dataset generation removed -->
+            </div>
+            <div id="db-status" class="small text-muted">Scegli un file SQLite e premi "Carica Dataset".</div>
+        </div>
+
+        <div class="card p-4 shadow-sm mb-3" data-hide-on-generate>
+            <h5 class="mb-3">Contesto Aggiuntivo (Opzionale)</h5>
+            <div class="db-picker-row mb-2">
+                <input type="file" id="context-file" accept=".txt" class="d-none">
+                <button class="btn btn-outline-secondary" type="button" onclick="openContextPicker()">📄 Scegli File .txt</button>
+                <span id="context-file-name" class="db-file-name">Nessun file selezionato</span>
+            </div>
+            <div id="context-status" class="small text-muted">Aggiungi informazioni extra per aiutare l'LLM (es. glossario).</div>
+        </div>
+
         <div class="card p-4 shadow-sm">
-            <div class="input-group mb-3">
+            <div class="reasoning-toggle-row d-flex justify-content-between align-items-center mb-3" data-hide-on-generate>
+                <div class="d-flex gap-3">
+                    <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="baseline-toggle">
+                        <label class="form-check-label" for="baseline-toggle">Usa Baseline</label>
+                    </div>
+                    <div class="form-check form-switch mt-1">
+                        <input class="form-check-input" type="checkbox" id="reasoning-toggle" checked>
+                        <label class="form-check-label" for="reasoning-toggle">Mostra Step</label>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="text-muted small mb-0 text-nowrap">Modello:</label>
+                    <select class="form-select form-select-sm" id="llm-model-select" style="width: auto;">
+                        <option value="" disabled selected>Caricamento modelli...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="input-group mb-3" data-hide-on-generate>
                 <input type="text" id="question" class="form-control" placeholder="Inserisci la tua domanda...">
                 <button class="btn btn-primary" onclick="sendQuery()">Invia</button>
             </div>
+
+            <div class="mb-4" data-hide-on-generate>
+                <select class="form-select form-select-sm" id="example-select" onchange="handleExampleSelection(this)">
+                    <option value="" selected disabled>Examples</option>
+                    <option value="Quanti giocatori ci sono in totale?">Quanti giocatori ci sono?</option>
+                    <option value="Quali sono i nomi dei giocatori che battono con la mano sinistra?">Giocatori mancini?</option>
+                    <option value="Quale squadra ha avuto la più alta affluenza?">Squadra con più affluenza?</option>
+                    <option value="Mostra lo stipendio medio dei giocatori della American League (AL).">Stipendio medio in AL?</option>
+                </select>
+            </div>
+
+            <!-- Synthetic dataset UI removed -->
 
             <div id="loader" class="text-center loading">
                 <div class="loader-container">
@@ -147,35 +221,24 @@
                         <div></div>
                     </div>
                     <h5 class="mt-4 text-primary">Elaborazione in corso...</h5>
-                    
-                    <div class="progress-messages">
-                        <div class="progress-item active" id="step-1">
-                            <span class="progress-icon">⏳</span>
-                            <span class="progress-text">Ricerca pattern analoghi nel Vector DB...</span>
-                        </div>
-                        <div class="progress-item pending" id="step-2">
-                            <span class="progress-icon">🧠</span>
-                            <span class="progress-text">Ragionamento chain-of-thought...</span>
-                        </div>
-                        <div class="progress-item pending" id="step-3">
-                            <span class="progress-icon">🔍</span>
-                            <span class="progress-text">Identificazione colonne necessarie...</span>
-                        </div>
-                        <div class="progress-item pending" id="step-4">
-                            <span class="progress-icon">✨</span>
-                            <span class="progress-text">Generazione query MySQL...</span>
-                        </div>
+
+                    <div class="progress-messages" id="progress-container">
                     </div>
                 </div>
             </div>
 
-            <div id="response-area">
+            <div id="response-area" data-hide-on-generate>
                 <div id="sql-preview" class="alert alert-secondary d-none"></div>
                 <div id="feedback-area" class="mb-3 d-none">
-                    <p class="mb-2">Per migliorare l'affidabilità del modello bisogna aumentare i dati che ha a disposizione. Vuoi inserire questa query che ha generato nel pool?</p>
+                    <p class="mb-2">La query generata è corretta?</p>
                     <div class="btn-group" role="group" aria-label="Feedback query">
-                        <button id="btn-correct" class="btn btn-success">Sì</button>
+                        <button id="btn-correct" class="btn btn-success">Si</button>
                         <button id="btn-wrong" class="btn btn-danger">No</button>
+                    </div>
+                    <div id="wrong-feedback-form" class="mt-3 d-none">
+                        <label for="wrong-feedback-text" class="form-label">Spiega cosa non va nella query</label>
+                        <textarea id="wrong-feedback-text" class="form-control" rows="3" placeholder="Es: manca il filtro per anno, voglio solo clienti attivi..."></textarea>
+                        <button id="btn-retry-with-feedback" class="btn btn-warning mt-2" type="button">Rigenera con spiegazione</button>
                     </div>
                     <div id="feedback-message" class="mt-2"></div>
                 </div>
@@ -189,82 +252,159 @@
     <script>
         let currentQuestion = "";
         let currentSql = "";
+        let currentContext = "";
         let eventSource = null;
 
-        function updateProgressStep(step) {
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-            const icons = ['⏳', '🧠', '🔍', '✨'];
-            const stepIndex = steps.indexOf(step);
-            
-            if (stepIndex === -1) return;
+        function setGenerationMode(isGenerating) {
+            document.body.classList.toggle('generating', isGenerating);
+        }
 
-            // Marca tutti i step precedenti come completati
-            for (let i = 0; i < stepIndex; i++) {
-                const element = document.getElementById(steps[i]);
-                if (element) {
-                    element.classList.remove('active', 'pending');
-                    element.classList.add('completed');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = '✓';
-                        icon.classList.add('completed');
+        function openContextPicker() {
+            document.getElementById('context-file').click();
+        }
+
+        async function handleExampleSelection(selectElement) {
+            const text = selectElement.value;
+            if (text) {
+                document.getElementById('question').value = text;
+                
+                // Autocaricamento del dataset di esempio
+                const dbStatus = document.getElementById('db-status');
+                dbStatus.textContent = 'Caricamento database di esempio...';
+                dbStatus.className = 'small text-muted';
+                try {
+                    const res = await fetch('/api/set-db', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({db_path: 'spider_data/database/baseball_1/baseball_1.sqlite'})
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        dbStatus.textContent = `Connesso: ${data.db_name} (${data.tables} tabelle)`;
+                        dbStatus.className = 'small text-success';
+                    } else {
+                        dbStatus.textContent = 'Errore caricamento DB di esempio.';
+                        dbStatus.className = 'small text-danger';
                     }
+                } catch(e) {
+                    console.error("Errore autocaricamento DB di esempio", e);
+                }
+
+                sendQuery(); 
+                selectElement.value = ""; // Reset visualmente a "Examples"
+            }
+        }
+
+        function setupFeedbackHandlers() {
+            const feedbackArea = document.getElementById('feedback-area');
+            const wrongFeedbackForm = document.getElementById('wrong-feedback-form');
+            const wrongFeedbackText = document.getElementById('wrong-feedback-text');
+            const btnCorrect = document.getElementById('btn-correct');
+            const btnWrong = document.getElementById('btn-wrong');
+
+            feedbackArea.classList.remove('d-none');
+            wrongFeedbackForm.classList.add('d-none');
+            wrongFeedbackText.value = '';
+
+            btnCorrect.onclick = async () => {
+                await saveFeedback(true);
+                wrongFeedbackForm.classList.add('d-none');
+            };
+
+            btnWrong.onclick = async () => {
+                await saveFeedback(false);
+                wrongFeedbackForm.classList.remove('d-none');
+                wrongFeedbackText.focus();
+            };
+        }
+
+        function setReasoningVisibility() {
+            const toggle = document.getElementById('reasoning-toggle');
+            const panel = document.getElementById('progress-container');
+            if (!toggle || !panel) return;
+            panel.style.display = toggle.checked ? 'block' : 'none';
+        }
+
+        function addProgressStep(step, message) {
+            const container = document.getElementById('progress-container');
+            if (!container) return;
+
+            // Mark previous active step as completed
+            const prevActive = container.querySelector('.progress-item.active');
+            if (prevActive) {
+                prevActive.classList.remove('active');
+                prevActive.classList.add('completed');
+                const prevIcon = prevActive.querySelector('.progress-icon');
+                if (prevIcon) {
+                    prevIcon.textContent = '✓';
+                    prevIcon.style.animation = 'none';
                 }
             }
-            
-            // Marca lo step corrente come attivo
-            const currentElement = document.getElementById(step);
-            if (currentElement) {
-                currentElement.classList.remove('pending');
-                currentElement.classList.add('active');
+
+            // Determine style based on step type
+            let stepClass = 'active';
+            let icon = '⏳';
+            if (step.includes('done') || step === 'judge-ok') {
+                stepClass = 'completed';
+                icon = '✓';
+            } else if (step === 'error') {
+                stepClass = 'error';
+                icon = '✗';
+            } else if (step === 'judge-fail') {
+                stepClass = 'warning';
+                icon = '⚠';
+            } else if (step.startsWith('fix')) {
+                icon = '🔧';
+            } else if (step === 'judge') {
+                icon = '⚖️';
+            } else if (step === 'rag') {
+                icon = '🔍';
+            } else if (step === 'columns') {
+                icon = '📋';
+            } else if (step === 'generation') {
+                icon = '✨';
+            } else if (step === 'execution') {
+                icon = '⚙️';
             }
-            
-            // Marca i step successivi come pending
-            for (let i = stepIndex + 1; i < steps.length; i++) {
-                const element = document.getElementById(steps[i]);
-                if (element) {
-                    element.classList.remove('active', 'completed');
-                    element.classList.add('pending');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = icons[i];
-                        icon.classList.remove('completed');
-                    }
-                }
-            }
+
+            const div = document.createElement('div');
+            div.className = `progress-item ${stepClass}`;
+            div.innerHTML = `<span class="progress-icon${stepClass === 'active' ? '' : ' completed'}" style="${stepClass === 'active' ? '' : 'animation:none'}">${icon}</span><span class="progress-text">${message}</span>`;
+            container.appendChild(div);
+
+            // Auto-scroll to bottom
+            container.scrollTop = container.scrollHeight;
         }
 
         function completeAllSteps() {
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-            steps.forEach((stepId) => {
-                const element = document.getElementById(stepId);
-                if (element) {
-                    element.classList.remove('active', 'pending');
-                    element.classList.add('completed');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = '✓';
-                        icon.classList.add('completed');
-                    }
-                }
-            });
+            // No-op: steps are managed dynamically
         }
 
         function resetProgressSteps() {
-            const steps = ['step-1', 'step-2', 'step-3', 'step-4'];
-            const icons = ['⏳', '🧠', '🔍', '✨'];
-            
-            steps.forEach((stepId, index) => {
-                const element = document.getElementById(stepId);
-                if (element) {
-                    element.className = 'progress-item' + (index === 0 ? ' active' : ' pending');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = icons[index];
-                        icon.classList.remove('completed');
-                    }
+            const container = document.getElementById('progress-container');
+            if (container) container.innerHTML = '';
+        }
+
+        async function loadModels() {
+            const select = document.getElementById('llm-model-select');
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                if (data.success && data.models.length > 0) {
+                    select.innerHTML = '';
+                    data.models.forEach((model, i) => {
+                        const opt = document.createElement('option');
+                        opt.value = model;
+                        opt.textContent = model;
+                        if (i === 0) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                } else {
+                    select.innerHTML = '<option value="" disabled selected>Nessun modello disponibile</option>';
                 }
-            });
+            } catch (e) {
+                select.innerHTML = '<option value="" disabled selected>Errore caricamento modelli</option>';
+            }
         }
 
         function startProgressListener(sessionId) {
@@ -276,8 +416,8 @@
             eventSource.onmessage = function(event) {
                 try {
                     const state = JSON.parse(event.data);
-                    if (state.step) {
-                        updateProgressStep(state.step);
+                    if (state.step && state.message) {
+                        addProgressStep(state.step, state.message);
                     }
                 } catch (e) {
                     // Ignora errori di parsing
@@ -291,6 +431,62 @@
             };
         }
 
+        async function refreshHealth() {
+            const dbStatus = document.getElementById('db-status');
+            try {
+                const response = await fetch('/api/health');
+                const res = await response.json();
+                if (res.db_ready) {
+                    dbStatus.textContent = `Dataset attivo: ${res.db_name}`;
+                    dbStatus.className = 'small text-success';
+                } else {
+                    dbStatus.textContent = 'DB non configurato. Seleziona un file e premi Carica DB.';
+                    dbStatus.className = 'small text-warning';
+                }
+            } catch (e) {
+                dbStatus.textContent = 'Impossibile leggere lo stato del DB.';
+                dbStatus.className = 'small text-danger';
+            }
+        }
+
+        function openDbPicker() {
+            document.getElementById('db-file').click();
+        }
+
+        async function uploadDatabaseFile() {
+            const fileInput = document.getElementById('db-file');
+            const dbStatus = document.getElementById('db-status');
+            const selectedFile = fileInput.files && fileInput.files[0];
+
+            if (!selectedFile) {
+                alert('Seleziona prima un file SQLite.');
+                return;
+            }
+
+            dbStatus.textContent = 'Upload e connessione in corso...';
+            dbStatus.className = 'small text-muted';
+
+            try {
+                const response = await fetch(`/api/upload-db?filename=${encodeURIComponent(selectedFile.name)}`, {
+                    method: 'POST',
+                    body: selectedFile
+                });
+                const res = await response.json();
+
+                if (response.ok && res.success) {
+                    dbStatus.textContent = `Connesso: ${res.db_name} (${res.tables} tabelle)`;
+                    dbStatus.className = 'small text-success';
+                } else {
+                    dbStatus.textContent = res.detail || res.error || 'Errore durante la configurazione DB.';
+                    dbStatus.className = 'small text-danger';
+                }
+            } catch (e) {
+                dbStatus.textContent = 'Errore di connessione al server.';
+                dbStatus.className = 'small text-danger';
+            }
+        }
+        // Synthetic dataset generation removed from UI
+
         async function sendQuery() {
             currentQuestion = document.getElementById('question').value;
             const loader = document.getElementById('loader');
@@ -298,71 +494,76 @@
             const sqlPrev = document.getElementById('sql-preview');
             const feedbackArea = document.getElementById('feedback-area');
             const feedbackMessage = document.getElementById('feedback-message');
+            const wrongFeedbackForm = document.getElementById('wrong-feedback-form');
+            const wrongFeedbackText = document.getElementById('wrong-feedback-text');
 
-            if (!currentQuestion) return alert("Inserisci una domanda!");
+            if (!currentQuestion) return alert('Inserisci una domanda!');
 
-            // Reset e mostra loader
-            table.innerHTML = "";
+            table.innerHTML = '';
             sqlPrev.classList.add('d-none');
             feedbackArea.classList.add('d-none');
-            feedbackMessage.textContent = "";
-            loader.style.display = "block";
-            
-            // Reset progress steps
+            feedbackMessage.textContent = '';
+            wrongFeedbackForm.classList.add('d-none');
+            wrongFeedbackText.value = '';
+            loader.style.display = 'block';
+            setGenerationMode(true);
+
             resetProgressSteps();
 
             const sessionId = (window.crypto && window.crypto.randomUUID)
                 ? window.crypto.randomUUID()
                 : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            
-            // Avvia l'ascolto degli aggiornamenti di progresso dal server
+
             startProgressListener(sessionId);
 
             try {
+                const useBaseline = document.getElementById('baseline-toggle').checked;
+                const llmModel = document.getElementById('llm-model-select').value;
                 const response = await fetch('/api/ask', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({question: currentQuestion, session_id: sessionId})
+                    body: JSON.stringify({
+                        question: currentQuestion, 
+                        session_id: sessionId, 
+                        use_baseline: useBaseline,
+                        llm_model: llmModel,
+                        additional_context: currentContext
+                    })
                 });
                 const res = await response.json();
 
-                // Completa tutti gli step quando la risposta arriva
                 completeAllSteps();
-                
-                // Chiudi la connessione SSE
+
                 if (eventSource) {
                     eventSource.close();
                     eventSource = null;
                 }
 
-                if (res.success){
+                if (res.success) {
                     currentSql = res.sql;
-                    sqlPrev.textContent = "SQL: " + res.sql;
+                    sqlPrev.textContent = 'SQL: ' + res.sql;
                     sqlPrev.classList.remove('d-none');
-                    feedbackArea.classList.remove('d-none');
 
-                   if (!res.retrieved) {
-                        feedbackArea.classList.remove('d-none');
-                        document.getElementById('btn-correct').onclick = () => saveFeedback(true);
-                        document.getElementById('btn-wrong').onclick = () => saveFeedback(false);
+                    if (!res.retrieved) {
+                        setupFeedbackHandlers();
                     } else {
                         feedbackArea.classList.add('d-none');
                     }
 
                     if (res.data.length > 0) {
-                        let header = "<thead><tr>" + res.columns.map(c => `<th>${c}</th>`).join('') + "</tr></thead>";
-                        let body = "<tbody>" + res.data.map(row => 
-                            "<tr>" + row.map(cell => `<td>${cell}</td>`).join('') + "</tr>"
-                        ).join('') + "</tbody>";
+                        let header = '<thead><tr>' + res.columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+                        let body = '<tbody>' + res.data.map(row =>
+                            '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
+                        ).join('') + '</tbody>';
                         table.innerHTML = header + body;
                     } else {
                         table.innerHTML = "<p class='text-muted'>Nessun risultato trovato.</p>";
                     }
                 } else {
-                    alert("Errore: " + res.error);
+                    alert('Errore: ' + (res.error || res.detail || 'Errore sconosciuto'));
                 }
             } catch (e) {
-                alert("Errore di connessione al server.");
+                alert('Errore di connessione al server.');
                 completeAllSteps();
             } finally {
                 if (eventSource) {
@@ -370,13 +571,19 @@
                     eventSource = null;
                 }
                 setTimeout(() => {
-                    loader.style.display = "none";
+                    loader.style.display = 'none';
+                    setGenerationMode(false);
                 }, 500);
             }
         }
 
         async function saveFeedback(correct) {
             const feedbackMessage = document.getElementById('feedback-message');
+            const btnCorrect = document.getElementById('btn-correct');
+            const btnWrong = document.getElementById('btn-wrong');
+
+            btnCorrect.disabled = true;
+            btnWrong.disabled = true;
             try {
                 const response = await fetch('/api/save', {
                     method: 'POST',
@@ -391,15 +598,162 @@
                 if (res.success) {
                     feedbackMessage.textContent = res.message || (correct ? 'Query salvata nel pool.' : 'Query non salvata nel pool.');
                     feedbackMessage.className = correct ? 'text-success' : 'text-danger';
+                    
+                    // Visual feedback on buttons
+                    if (correct) {
+                        btnCorrect.className = 'btn btn-success';
+                        btnWrong.className = 'btn btn-outline-danger';
+                    } else {
+                        btnCorrect.className = 'btn btn-outline-success';
+                        btnWrong.className = 'btn btn-danger';
+                    }
+                    
+                    return true;
                 } else {
                     feedbackMessage.textContent = res.error || 'Errore durante il salvataggio del feedback.';
                     feedbackMessage.className = 'text-danger';
+                    return false;
                 }
             } catch (e) {
                 feedbackMessage.textContent = 'Errore di connessione al server.';
                 feedbackMessage.className = 'text-danger';
+                return false;
+            } finally {
+                btnCorrect.disabled = false;
+                btnWrong.disabled = false;
             }
         }
+
+        async function retryWithUserFeedback() {
+            const feedbackMessage = document.getElementById('feedback-message');
+            const wrongFeedbackText = document.getElementById('wrong-feedback-text');
+            const feedback = wrongFeedbackText.value.trim();
+            const loader = document.getElementById('loader');
+            const table = document.getElementById('results-table');
+            const sqlPrev = document.getElementById('sql-preview');
+
+            if (!feedback) {
+                feedbackMessage.textContent = 'Inserisci una spiegazione prima di rigenerare.';
+                feedbackMessage.className = 'text-danger';
+                return;
+            }
+
+            loader.style.display = 'block';
+            feedbackMessage.textContent = 'Rigenerazione in corso...';
+            feedbackMessage.className = 'text-muted';
+            setGenerationMode(true);
+
+            const sessionId = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+            startProgressListener(sessionId);
+
+            try {
+                const useBaseline = document.getElementById('baseline-toggle').checked;
+                const llmModel = document.getElementById('llm-model-select').value;
+                const response = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        question: currentQuestion,
+                        session_id: sessionId,
+                        previous_sql: currentSql,
+                        user_feedback: feedback,
+                        use_baseline: useBaseline,
+                        llm_model: llmModel,
+                        additional_context: currentContext
+                    })
+                });
+                const res = await response.json();
+
+                completeAllSteps();
+
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+
+                if (res.success) {
+                    currentSql = res.sql;
+                    sqlPrev.textContent = 'SQL: ' + res.sql;
+                    sqlPrev.classList.remove('d-none');
+
+                    setupFeedbackHandlers();
+
+                    if (res.data.length > 0) {
+                        let header = '<thead><tr>' + res.columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+                        let body = '<tbody>' + res.data.map(row =>
+                            '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
+                        ).join('') + '</tbody>';
+                        table.innerHTML = header + body;
+                    } else {
+                        table.innerHTML = "<p class='text-muted'>Nessun risultato trovato.</p>";
+                    }
+
+                    feedbackMessage.textContent = 'Query rigenerata usando la tua spiegazione.';
+                    feedbackMessage.className = 'text-success';
+                } else {
+                    feedbackMessage.textContent = 'Errore: ' + (res.error || res.detail || 'Errore sconosciuto');
+                    feedbackMessage.className = 'text-danger';
+                }
+            } catch (e) {
+                feedbackMessage.textContent = 'Errore di connessione durante la rigenerazione.';
+                feedbackMessage.className = 'text-danger';
+                completeAllSteps();
+            } finally {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                    setGenerationMode(false);
+                }, 500);
+            }
+        }
+
+        document.getElementById('db-file').addEventListener('change', (event) => {
+            const selectedFile = event.target.files && event.target.files[0];
+            const fileNameLabel = document.getElementById('db-file-name');
+            fileNameLabel.textContent = selectedFile ? selectedFile.name : 'Nessun file selezionato';
+        });
+
+        document.getElementById('context-file').addEventListener('change', (event) => {
+            const selectedFile = event.target.files && event.target.files[0];
+            const fileNameLabel = document.getElementById('context-file-name');
+            const statusLabel = document.getElementById('context-status');
+            
+            if (selectedFile) {
+                fileNameLabel.textContent = selectedFile.name;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentContext = e.target.result;
+                    statusLabel.textContent = 'Contesto caricato correttamente.';
+                    statusLabel.className = 'small text-success';
+                };
+                reader.onerror = function() {
+                    statusLabel.textContent = 'Errore durante la lettura del file.';
+                    statusLabel.className = 'small text-danger';
+                };
+                reader.readAsText(selectedFile);
+            } else {
+                fileNameLabel.textContent = 'Nessun file selezionato';
+                currentContext = "";
+                statusLabel.textContent = "Aggiungi informazioni extra per aiutare l'LLM (es. glossario).";
+                statusLabel.className = 'small text-muted';
+            }
+        });
+
+        document.getElementById('btn-retry-with-feedback').addEventListener('click', retryWithUserFeedback);
+
+        document.getElementById('reasoning-toggle').addEventListener('change', setReasoningVisibility);
+
+        window.onload = () => {
+            refreshHealth();
+            setReasoningVisibility();
+            loadModels();
+        };
     </script>
 </body>
 </html>

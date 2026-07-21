@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Text-to-SQL</title>
+    <title>Text-to-SQL (Demo)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -63,22 +63,17 @@
         }
 
         .progress-item {
-            margin: 15px 0;
-            padding: 12px 15px;
+            margin: 8px 0;
+            padding: 10px 15px;
             border-left: 3px solid #0d6efd;
             background-color: #f8f9fa;
             border-radius: 4px;
             opacity: 0;
-            animation: fadeInSlide 0.6s ease-out forwards;
-            font-size: 14px;
+            animation: fadeInSlide 0.4s ease-out forwards;
+            font-size: 13px;
             display: flex;
             align-items: center;
             gap: 10px;
-        }
-
-        .progress-item.pending {
-            border-left-color: #ffc107;
-            background-color: #fff8e1;
         }
 
         .progress-item.completed {
@@ -86,16 +81,21 @@
             background-color: #e8f5e9;
         }
 
+        .progress-item.error {
+            border-left-color: #dc3545;
+            background-color: #fce4ec;
+        }
+
+        .progress-item.warning {
+            border-left-color: #ffc107;
+            background-color: #fff8e1;
+        }
+
         .progress-item.active {
             border-left-color: #0d6efd;
             background-color: #e7f1ff;
             font-weight: 500;
         }
-
-        .progress-item:nth-child(1) { animation-delay: 0.1s; }
-        .progress-item:nth-child(2) { animation-delay: 0.5s; }
-        .progress-item:nth-child(3) { animation-delay: 0.9s; }
-        .progress-item:nth-child(4) { animation-delay: 1.3s; }
 
         @keyframes fadeInSlide {
             from {
@@ -148,32 +148,24 @@
 <body class="bg-light">
     <div class="container py-5">
         <div class="d-flex justify-content-between align-items-center mb-4" data-hide-on-generate>
-            <h1 class="mb-0">Text-to-SQL</h1>
+            <h1 class="mb-0">Text-to-SQL <span class="badge bg-warning text-dark fs-6 ms-2">Demo Mode</span></h1>
             <a href="/pool" class="btn btn-outline-secondary">Apri Pool Query</a>
         </div>
 
         <div class="card p-4 shadow-sm mb-3" data-hide-on-generate>
             <h5 class="mb-3">Connessione Database SQLite</h5>
             <div class="db-picker-row mb-2">
-                <input type="file" id="db-file" accept=".sqlite,.sqlite3,.db" class="d-none">
-                <button class="btn btn-outline-secondary" type="button" onclick="openDbPicker()">📎 Scegli Dataset</button>
-                <span id="db-file-name" class="db-file-name">Nessun file selezionato</span>
-                <button class="btn btn-outline-primary" onclick="uploadDatabaseFile()">Carica Dataset</button>
+                <span class="db-file-name fw-bold text-success">✅ Dataset 'baseball_1.sqlite' precaricato</span>
             </div>
-            <div class="mt-2">
-                <!-- Synthetic dataset generation removed -->
-            </div>
-            <div id="db-status" class="small text-muted">Scegli un file SQLite e premi "Carica Dataset".</div>
+            <div id="db-status" class="small text-muted">Caricamento in corso...</div>
         </div>
 
         <div class="card p-4 shadow-sm mb-3" data-hide-on-generate>
             <h5 class="mb-3">Contesto Aggiuntivo (Opzionale)</h5>
             <div class="db-picker-row mb-2">
-                <input type="file" id="context-file" accept=".txt" class="d-none">
-                <button class="btn btn-outline-secondary" type="button" onclick="openContextPicker()">📄 Scegli File .txt</button>
-                <span id="context-file-name" class="db-file-name">Nessun file selezionato</span>
+                <span class="db-file-name fw-bold text-success">✅ Contesto aggiuntivo precaricato (Statistiche Baseball)</span>
             </div>
-            <div id="context-status" class="small text-muted">Aggiungi informazioni extra per aiutare l'LLM (es. glossario).</div>
+            <div id="context-status" class="small text-muted">Glossario e informazioni di dominio attive.</div>
         </div>
 
         <div class="card p-4 shadow-sm">
@@ -191,13 +183,7 @@
                 <div class="d-flex align-items-center gap-2">
                     <label class="text-muted small mb-0 text-nowrap">Modello:</label>
                     <select class="form-select form-select-sm" id="llm-model-select" style="width: auto;">
-                        <option value="cogito:8b" selected>cogito:8b</option>
-                        <option value="qwen2.5-coder:latest">qwen2.5-coder:latest</option>
-                        <option value="qwen2.5-coder:3B">qwen2.5-coder:3B</option>
-                        <option value="qwen2.5-coder:1.5b">qwen2.5-coder:1.5b</option>
-                        <option value="qwen3.5:9b">qwen3.5:9b</option>
-                        <option value="gemma4:e4b">gemma4:e4b</option>
-                        <option value="qwen2.5:3B">qwen2.5:3B</option>
+                        <option value="" disabled selected>Caricamento modelli...</option>
                     </select>
                 </div>
             </div>
@@ -210,14 +196,12 @@
             <div class="mb-4" data-hide-on-generate>
                 <select class="form-select form-select-sm" id="example-select" onchange="handleExampleSelection(this)">
                     <option value="" selected disabled>Examples</option>
-                    <option value="Quanti giocatori ci sono in totale?">Quanti giocatori ci sono?</option>
-                    <option value="Quali sono i nomi dei giocatori che battono con la mano sinistra?">Giocatori mancini?</option>
-                    <option value="Quale squadra ha avuto la più alta affluenza?">Squadra con più affluenza?</option>
-                    <option value="Mostra lo stipendio medio dei giocatori della American League (AL).">Stipendio medio in AL?</option>
+                    <option value="Quanti giocatori ci sono in totale?">Quanti giocatori ci sono in totale?</option>
+                    <option value="Quali sono i nomi dei giocatori che battono con la mano sinistra?">Quali sono i nomi dei giocatori che battono con la mano sinistra?</option>
+                    <option value="Quale squadra ha avuto la più alta affluenza?">Quale squadra ha avuto la più alta affluenza?</option>
+                    <option value="Mostra lo stipendio medio dei giocatori della American League (AL).">Mostra lo stipendio medio dei giocatori della American League (AL).</option>
                 </select>
             </div>
-
-            <!-- Synthetic dataset UI removed -->
 
             <div id="loader" class="text-center loading">
                 <div class="loader-container">
@@ -228,19 +212,7 @@
                     </div>
                     <h5 class="mt-4 text-primary">Elaborazione in corso...</h5>
 
-                    <div class="progress-messages">
-                        <div class="progress-item active" id="step-1">
-                            <span class="progress-icon">⏳</span>
-                            <span class="progress-text">Ricerca pattern analoghi nel Vector DB...</span>
-                        </div>
-                        <div class="progress-item pending" id="step-2">
-                            <span class="progress-icon">🔍</span>
-                            <span class="progress-text">Identificazione colonne necessarie...</span>
-                        </div>
-                        <div class="progress-item pending" id="step-3">
-                            <span class="progress-icon">✨</span>
-                            <span class="progress-text">Generazione query MySQL...</span>
-                        </div>
+                    <div class="progress-messages" id="progress-container">
                     </div>
                 </div>
             </div>
@@ -270,44 +242,17 @@
     <script>
         let currentQuestion = "";
         let currentSql = "";
-        let currentContext = "";
+        let currentContext = "Il database contiene statistiche di baseball. Le tabelle principali sono all_star, appearances, batting, fielding, hall_of_fame, manager, parks, ecc. Usa queste informazioni per aiutare la composizione delle query.";
         let eventSource = null;
 
         function setGenerationMode(isGenerating) {
             document.body.classList.toggle('generating', isGenerating);
         }
 
-        function openContextPicker() {
-            document.getElementById('context-file').click();
-        }
-
         async function handleExampleSelection(selectElement) {
             const text = selectElement.value;
             if (text) {
                 document.getElementById('question').value = text;
-                
-                // Autocaricamento del dataset di esempio
-                const dbStatus = document.getElementById('db-status');
-                dbStatus.textContent = 'Caricamento database di esempio...';
-                dbStatus.className = 'small text-muted';
-                try {
-                    const res = await fetch('/api/set-db', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({db_path: 'spider_data/database/baseball_1/baseball_1.sqlite'})
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        dbStatus.textContent = `Connesso: ${data.db_name} (${data.tables} tabelle)`;
-                        dbStatus.className = 'small text-success';
-                    } else {
-                        dbStatus.textContent = 'Errore caricamento DB di esempio.';
-                        dbStatus.className = 'small text-danger';
-                    }
-                } catch(e) {
-                    console.error("Errore autocaricamento DB di esempio", e);
-                }
-
                 sendQuery(); 
                 selectElement.value = ""; // Reset visualmente a "Examples"
             }
@@ -338,90 +283,87 @@
 
         function setReasoningVisibility() {
             const toggle = document.getElementById('reasoning-toggle');
-            const panel = document.querySelector('.progress-messages');
+            const panel = document.getElementById('progress-container');
             if (!toggle || !panel) return;
             panel.style.display = toggle.checked ? 'block' : 'none';
         }
 
-        function updateProgressStep(step) {
-            const steps = ['step-1', 'step-2', 'step-3'];
-            const icons = ['⏳', '🔍', '✨'];
-            const stepIndex = steps.indexOf(step);
+        function addProgressStep(step, message) {
+            const container = document.getElementById('progress-container');
+            if (!container) return;
 
-            if (stepIndex === -1) return;
-
-            for (let i = 0; i < stepIndex; i++) {
-                const element = document.getElementById(steps[i]);
-                if (element) {
-                    element.classList.remove('active', 'pending');
-                    element.classList.add('completed');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = '✓';
-                        icon.classList.add('completed');
-                    }
+            const prevActive = container.querySelector('.progress-item.active');
+            if (prevActive) {
+                prevActive.classList.remove('active');
+                prevActive.classList.add('completed');
+                const prevIcon = prevActive.querySelector('.progress-icon');
+                if (prevIcon) {
+                    prevIcon.textContent = '✓';
+                    prevIcon.style.animation = 'none';
                 }
             }
 
-            const currentElement = document.getElementById(step);
-            if (currentElement) {
-                currentElement.classList.remove('pending');
-                currentElement.classList.add('active');
+            let stepClass = 'active';
+            let icon = '⏳';
+            if (step.includes('done') || step === 'judge-ok') {
+                stepClass = 'completed';
+                icon = '✓';
+            } else if (step === 'error') {
+                stepClass = 'error';
+                icon = '✗';
+            } else if (step === 'judge-fail') {
+                stepClass = 'warning';
+                icon = '⚠';
+            } else if (step.startsWith('fix')) {
+                icon = '🔧';
+            } else if (step === 'judge') {
+                icon = '⚖️';
+            } else if (step === 'rag') {
+                icon = '🔍';
+            } else if (step === 'columns') {
+                icon = '📋';
+            } else if (step === 'generation') {
+                icon = '✨';
+            } else if (step === 'execution') {
+                icon = '⚙️';
             }
 
-            for (let i = stepIndex + 1; i < steps.length; i++) {
-                const element = document.getElementById(steps[i]);
-                if (element) {
-                    element.classList.remove('active', 'completed');
-                    element.classList.add('pending');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = icons[i];
-                        icon.classList.remove('completed');
-                    }
-                }
-            }
+            const div = document.createElement('div');
+            div.className = `progress-item ${stepClass}`;
+            div.innerHTML = `<span class="progress-icon${stepClass === 'active' ? '' : ' completed'}" style="${stepClass === 'active' ? '' : 'animation:none'}">${icon}</span><span class="progress-text">${message}</span>`;
+            container.appendChild(div);
+
+            container.scrollTop = container.scrollHeight;
         }
 
         function completeAllSteps() {
-            const steps = ['step-1', 'step-2', 'step-3'];
-            steps.forEach((stepId) => {
-                const element = document.getElementById(stepId);
-                if (element) {
-                    element.classList.remove('active', 'pending');
-                    element.classList.add('completed');
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = '✓';
-                        icon.classList.add('completed');
-                    }
-                }
-            });
         }
 
         function resetProgressSteps() {
-            const steps = ['step-1', 'step-2', 'step-3', ];
-            const icons = ['⏳', '🔍', '✨'];
-            const useBaseline = document.getElementById('baseline-toggle') ? document.getElementById('baseline-toggle').checked : false;
+            const container = document.getElementById('progress-container');
+            if (container) container.innerHTML = '';
+        }
 
-            steps.forEach((stepId, index) => {
-                const element = document.getElementById(stepId);
-                if (element) {
-                    if (useBaseline && stepId !== 'step-4') {
-                        element.style.display = 'none';
-                        element.className = 'progress-item pending';
-                    } else {
-                        element.style.display = 'flex';
-                        const isActive = useBaseline ? (stepId === 'step-4') : (index === 0);
-                        element.className = 'progress-item' + (isActive ? ' active' : ' pending');
-                    }
-                    const icon = element.querySelector('.progress-icon');
-                    if (icon) {
-                        icon.textContent = icons[index];
-                        icon.classList.remove('completed');
-                    }
+        async function loadModels() {
+            const select = document.getElementById('llm-model-select');
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                if (data.success && data.models.length > 0) {
+                    select.innerHTML = '';
+                    data.models.forEach((model, i) => {
+                        const opt = document.createElement('option');
+                        opt.value = model;
+                        opt.textContent = model;
+                        if (i === 0) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                } else {
+                    select.innerHTML = '<option value="" disabled selected>Nessun modello disponibile</option>';
                 }
-            });
+            } catch (e) {
+                select.innerHTML = '<option value="" disabled selected>Errore caricamento modelli</option>';
+            }
         }
 
         function startProgressListener(sessionId) {
@@ -433,11 +375,10 @@
             eventSource.onmessage = function(event) {
                 try {
                     const state = JSON.parse(event.data);
-                    if (state.step) {
-                        updateProgressStep(state.step);
+                    if (state.step && state.message) {
+                        addProgressStep(state.step, state.message);
                     }
                 } catch (e) {
-                    // Ignora errori di parsing
                 }
             };
             eventSource.onerror = function() {
@@ -457,7 +398,7 @@
                     dbStatus.textContent = `Dataset attivo: ${res.db_name}`;
                     dbStatus.className = 'small text-success';
                 } else {
-                    dbStatus.textContent = 'DB non configurato. Seleziona un file e premi Carica DB.';
+                    dbStatus.textContent = 'DB non configurato.';
                     dbStatus.className = 'small text-warning';
                 }
             } catch (e) {
@@ -465,44 +406,6 @@
                 dbStatus.className = 'small text-danger';
             }
         }
-
-        function openDbPicker() {
-            document.getElementById('db-file').click();
-        }
-
-        async function uploadDatabaseFile() {
-            const fileInput = document.getElementById('db-file');
-            const dbStatus = document.getElementById('db-status');
-            const selectedFile = fileInput.files && fileInput.files[0];
-
-            if (!selectedFile) {
-                alert('Seleziona prima un file SQLite.');
-                return;
-            }
-
-            dbStatus.textContent = 'Upload e connessione in corso...';
-            dbStatus.className = 'small text-muted';
-
-            try {
-                const response = await fetch(`/api/upload-db?filename=${encodeURIComponent(selectedFile.name)}`, {
-                    method: 'POST',
-                    body: selectedFile
-                });
-                const res = await response.json();
-
-                if (response.ok && res.success) {
-                    dbStatus.textContent = `Connesso: ${res.db_name} (${res.tables} tabelle)`;
-                    dbStatus.className = 'small text-success';
-                } else {
-                    dbStatus.textContent = res.detail || res.error || 'Errore durante la configurazione DB.';
-                    dbStatus.className = 'small text-danger';
-                }
-            } catch (e) {
-                dbStatus.textContent = 'Errore di connessione al server.';
-                dbStatus.className = 'small text-danger';
-            }
-        }
-        // Synthetic dataset generation removed from UI
 
         async function sendQuery() {
             currentQuestion = document.getElementById('question').value;
@@ -615,6 +518,16 @@
                 if (res.success) {
                     feedbackMessage.textContent = res.message || (correct ? 'Query salvata nel pool.' : 'Query non salvata nel pool.');
                     feedbackMessage.className = correct ? 'text-success' : 'text-danger';
+                    
+                    // Visual feedback on buttons
+                    if (correct) {
+                        btnCorrect.className = 'btn btn-success';
+                        btnWrong.className = 'btn btn-outline-danger';
+                    } else {
+                        btnCorrect.className = 'btn btn-outline-success';
+                        btnWrong.className = 'btn btn-danger';
+                    }
+                    
                     return true;
                 } else {
                     feedbackMessage.textContent = res.error || 'Errore durante il salvataggio del feedback.';
@@ -720,45 +633,32 @@
             }
         }
 
-        document.getElementById('db-file').addEventListener('change', (event) => {
-            const selectedFile = event.target.files && event.target.files[0];
-            const fileNameLabel = document.getElementById('db-file-name');
-            fileNameLabel.textContent = selectedFile ? selectedFile.name : 'Nessun file selezionato';
-        });
-
-        document.getElementById('context-file').addEventListener('change', (event) => {
-            const selectedFile = event.target.files && event.target.files[0];
-            const fileNameLabel = document.getElementById('context-file-name');
-            const statusLabel = document.getElementById('context-status');
-            
-            if (selectedFile) {
-                fileNameLabel.textContent = selectedFile.name;
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    currentContext = e.target.result;
-                    statusLabel.textContent = 'Contesto caricato correttamente.';
-                    statusLabel.className = 'small text-success';
-                };
-                reader.onerror = function() {
-                    statusLabel.textContent = 'Errore durante la lettura del file.';
-                    statusLabel.className = 'small text-danger';
-                };
-                reader.readAsText(selectedFile);
-            } else {
-                fileNameLabel.textContent = 'Nessun file selezionato';
-                currentContext = "";
-                statusLabel.textContent = "Aggiungi informazioni extra per aiutare l'LLM (es. glossario).";
-                statusLabel.className = 'small text-muted';
-            }
-        });
-
         document.getElementById('btn-retry-with-feedback').addEventListener('click', retryWithUserFeedback);
-
         document.getElementById('reasoning-toggle').addEventListener('change', setReasoningVisibility);
 
-        window.onload = () => {
+        window.onload = async () => {
             refreshHealth();
             setReasoningVisibility();
+            loadModels();
+            
+            const dbStatus = document.getElementById('db-status');
+            try {
+                const res = await fetch('/api/set-db', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({db_path: 'spider_data/database/baseball_1/baseball_1.sqlite'})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    dbStatus.textContent = `Connesso: ${data.db_name} (${data.tables} tabelle)`;
+                    dbStatus.className = 'small text-success';
+                } else {
+                    dbStatus.textContent = 'Errore caricamento DB precaricato.';
+                    dbStatus.className = 'small text-danger';
+                }
+            } catch(e) {
+                console.error("Errore autocaricamento DB di esempio", e);
+            }
         };
     </script>
 </body>

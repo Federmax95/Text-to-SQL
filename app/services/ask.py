@@ -449,7 +449,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
         )
 
     # ========== FASE 1: Generazione SQL ==========
-    notify_progress("step-1", "Ricerca pattern nel Vector DB...")
+    notify_progress("rag", "Ricerca pattern analoghi nel Vector DB...")
     sim_context = ""
     if use_rag:
         print("\n🔍 Ricerca pattern logici analoghi nel Vector DB...")
@@ -460,6 +460,9 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
             print(
                 f"   [Trovato pattern analogo con {max_sim:.2f} di vicinanza]")
             sim_context = retriever.format_examples(similars)
+            notify_progress("rag-done", f"Trovati {len(similars)} pattern analoghi (max similarità: {max_sim:.2f})")
+        else:
+            notify_progress("rag-done", "Nessun pattern analogo trovato nel pool")
     
     if previous_sql:
         sim_context = (
@@ -471,7 +474,7 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
     # Selezione colonne
     valid_cols = list(valid_columns.keys())
     if use_cols:
-        notify_progress("step-2", "Identificazione colonne necessarie...")
+        notify_progress("columns", "Identificazione colonne necessarie tramite LLM...")
         print("🚀 Identificazione colonne strettamente necessarie...")
         try:
             p_cols = build_columns_prompt(augmented_question, schema_text)
@@ -482,11 +485,15 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                     print(
                         "   ⚠️ Nessuna colonna estratta, passo l'intero schema come fallback.")
                 valid_cols = list(valid_columns.keys())
+                notify_progress("columns-done", f"Fallback: usato intero schema ({len(valid_cols)} colonne)")
+            else:
+                notify_progress("columns-done", f"Selezionate {len(valid_cols)} colonne rilevanti")
         except ConnectionError as ce:
+            notify_progress("error", f"❌ Errore connessione LLM: {ce}")
             return {"success": False, "error": str(ce), "judge_calls": judge_calls}
 
     # Generazione SQL
-    notify_progress("step-3", "Generazione query MySQL...")
+    notify_progress("generation", "Generazione query SQL tramite LLM...")
     print("⏳ Generazione Query Target...")
     
     if not use_improved_prompt:
@@ -502,27 +509,31 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
             
     try:
         sql = clean_sql(call_ollama(p_sql, model=llm_model))
+        notify_progress("generation-done", f"Query generata")
     except ConnectionError as ce:
+        notify_progress("error", f"Errore connessione LLM: {ce}")
         return {"success": False, "error": str(ce), "judge_calls": judge_calls}
 
     # ========== FASE 2: Loop di auto-correzione (sintassi + semantica) ==========
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
             print(f"   🔄 AutoFix #{attempt - 1}...")
-            notify_progress("step-3", f"Tentativo di fix #{attempt - 1}...")
 
         # ---- 2.1 Controllo sintassi (solo SELECT) ----
+        notify_progress("execution", f"Validazione e esecuzione query (tentativo {attempt}/{max_attempts})...")
         is_valid, validation_err = validate_sql_syntax(sql)
         if not is_valid:
             print(f"❌ Bloccato: {validation_err}")
+            notify_progress("error", f"Query bloccata: {validation_err}")
             return {"success": False, "error": validation_err, "sql": sql, "judge_calls": judge_calls}
 
         res = execute_query(sql, adapter)
         if not res.get("success"):
-            # Errore di esecuzione: fix sintattico/logico (come già facevi)
+            # Errore di esecuzione: fix sintattico/logico
             err = res["error"]
             print(f"   ❌ Errore (Execution/Syntax): {err[:350]}")
             if attempt < max_attempts:
+                notify_progress("fix-syntax", f"Fix #{attempt}: errore di esecuzione — diagnosi e correzione in corso...")
                 explain = call_ollama(build_explain_prompt(
                     sql, err, augmented_question, schema_text), model=llm_model)
                 if DEBUG:
@@ -530,40 +541,53 @@ def process_question(q: str, retriever: Retriever, adapter: SchemaAdapter, schem
                 p_fix = build_fix_prompt(
                     sql, err, explain, schema_text, question=augmented_question)
                 sql = clean_sql(call_ollama(p_fix, model=llm_model))
+                notify_progress("fix-syntax-done", f"Fix #{attempt}: nuova query generata")
             else:
+                notify_progress("error", f"Tentativi esauriti — errore: {err[:150]}")
                 return {"success": False, "error": err, "sql": sql, "judge_calls": judge_calls}
             continue   # riprova con la nuova SQL
+
+        notify_progress("execution-done", "Query eseguita con successo")
 
         # ---- 2.3 Esecuzione riuscita -> validazione semantica ----
         if max_attempts == 1:
             # Bypass judge per le ablazioni base
             if DEBUG:
                 print(f"\n✅ QUERY GENERATA (Bypass Judge):\n   {sql}")
+            notify_progress("done", "Completato (baseline, judge saltato)")
             res["sql"] = sql
             res["judge_calls"] = judge_calls
             return res
 
         judge_calls += 1
-        is_correct, explanation = is_result_semantically_correct(augmented_question, sql, res, model="llama3.2:3b")
+        notify_progress("judge", f"Validazione semantica (LLM Judge, chiamata #{judge_calls})...")
+        is_correct, explanation = is_result_semantically_correct(augmented_question, sql, res, model=llm_model)
         if is_correct:
             print(f"\n🖥️  QUERY ESEGUITA:\n   {sql}")
+            notify_progress("judge-ok", "Judge: il risultato risponde correttamente alla domanda")
+            notify_progress("done", "Completato con successo")
             res["sql"] = sql
             res["judge_calls"] = judge_calls
             return res
         else:
             print(
                 f"   ❌ Risultato semanticamente scorretto: {explanation[:200]}")
+            notify_progress("judge-fail", f"Judge: risultato non corretto — {explanation[:150]}")
             if attempt < max_attempts:
+                notify_progress("fix-semantic", f"Fix semantico #{attempt}: rigenerazione query...")
                 # Prepara le colonne consentite (se in modalità baseline, usa lista vuota)
                 cols_for_fix = "\n".join(
                     valid_cols) if 'valid_cols' in locals() else ""
                 p_fix = build_semantic_fix_prompt(
                     augmented_question, sql, explanation, schema_text, cols_for_fix)
                 sql = clean_sql(call_ollama(p_fix, model=llm_model))
+                notify_progress("fix-semantic-done", f"Fix semantico #{attempt}: nuova query generata")
             else:
+                notify_progress("error", f"❌ Tentativi esauriti — errore semantico")
                 return {"success": False, "error": f"Errore semantico: {explanation}", "sql": sql, "judge_calls": judge_calls}
 
     print("\n❌ Impossibile generare una query SQLite valida (Tentativi esauriti).")
+    notify_progress("error", "❌ Impossibile generare una query valida")
     return {"success": False, "error": "Tentativi esauriti.", "sql": sql, "judge_calls": judge_calls}
 
 

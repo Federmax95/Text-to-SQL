@@ -130,10 +130,34 @@ class Retriever:
         is_correct: bool = True,
         error: str | None = None,
     ) -> bool:
-        """Aggiunge un esempio al pool (corretto o errato) e aggiorna embedding + file sul disco."""
-        if self.example_exists(question, query, db_id=db_id, is_correct=is_correct):
-            print(f"  ⚠️  Esempio già presente nel pool: '{question}'")
-            return False
+        """Aggiunge un esempio al pool (corretto o errato) o aggiorna uno esistente, e aggiorna embedding + file sul disco."""
+        normalized_question = self._normalize_text(question)
+        normalized_query = self._normalize_text(query)
+        
+        # Check if it already exists, to update it instead of duplicating
+        for i, item in enumerate(self.pool_data):
+            same_question = self._normalize_text(item.get("question", "")) == normalized_question
+            same_query = self._normalize_text(item.get("query", "")) == normalized_query
+            same_db = item.get("db_id", "northwind") == db_id
+            if same_question and same_query and same_db:
+                if bool(item.get("is_correct", True)) == bool(is_correct):
+                    print(f"  ⚠️  Esempio già presente nel pool: '{question}'")
+                    return False
+                
+                # Update existing example
+                self.pool_data[i]["is_correct"] = bool(is_correct)
+                self.pool_data[i]["error"] = error if error else None
+                
+                # Assicura che la cartella del pool esista
+                pool_dir = os.path.dirname(POOL_DATA_PATH)
+                os.makedirs(pool_dir, exist_ok=True)
+                
+                # Salva su disco per persistenza
+                with open(POOL_DATA_PATH, "w", encoding="utf-8") as f:
+                    json.dump(self.pool_data, f, ensure_ascii=False, indent=2)
+                quality_label = "corretto" if is_correct else "errato"
+                print(f"  ✅ Esempio aggiornato nel pool ({quality_label}): '{question}' (db_id={db_id})")
+                return True
 
         new_emb = self.model.encode([question], normalize_embeddings=True)
 

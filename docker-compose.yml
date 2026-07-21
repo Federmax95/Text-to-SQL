@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ollama:
     image: ollama/ollama:latest
@@ -7,9 +5,13 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      # Il volume persisterà i modelli scaricati
       - ollama_data:/root/.ollama
-  # Container ausiliario "usa-e-getta" per scaricare automaticamente il modello LLM ai primi avvii
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
   ollama-pull-model:
     image: ollama/ollama:latest
     restart: "no"
@@ -30,9 +32,21 @@ services:
     command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       ollama:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./data/uploaded_dbs:/app/data/uploaded_dbs
+
+  demo-app:
+    build: .
+    restart: always
+    ports:
+      - "8001:8000"
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api/generate
+    command: ["uvicorn", "demo.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      ollama:
+        condition: service_healthy
 
 
 volumes:
