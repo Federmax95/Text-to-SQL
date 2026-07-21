@@ -110,7 +110,12 @@ async def lifespan(app: FastAPI):
             "SQLITE_PATH", os.path.join(
                 BASE_DIR, "baseball_1.sqlite")
         )
-        if os.path.exists(_resolve_db_path(default_db_path)):
+        resolved = _resolve_db_path(default_db_path)
+        print(f"[DEBUG] BASE_DIR = {BASE_DIR}")
+        print(f"[DEBUG] default_db_path = {default_db_path}")
+        print(f"[DEBUG] resolved path = {resolved}")
+        print(f"[DEBUG] file exists = {os.path.exists(resolved)}")
+        if os.path.exists(resolved):
             _load_database(default_db_path)
             print(f"[OK] Startup completato. DB iniziale caricato con {len(app_state['valid_tables'])} tabelle.")
         else:
