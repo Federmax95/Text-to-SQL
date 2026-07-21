@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
 
         default_db_path = os.environ.get(
             "SQLITE_PATH", os.path.join(
-                PROJECT_DIR, "spider_data", "database", "baseball_1", "baseball_1.sqlite")
+                BASE_DIR, "baseball_1.sqlite")
         )
         if os.path.exists(_resolve_db_path(default_db_path)):
             _load_database(default_db_path)
