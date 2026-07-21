@@ -15,9 +15,15 @@
 
 ---
 
-## 📽️ Demo
+## 📽️ Example of Usage
 
-https://github.com/user-attachments/assets/5f8f0a35-3b8f-44ef-99ef-0225a684caab
+
+https://github.com/user-attachments/assets/e9c66e03-d062-4ca9-8e58-80bd3dec43bd
+
+
+
+
+
 
 ---
 
@@ -106,27 +112,38 @@ Text-to-SQL/
 
 ### Pipeline Overview
 
+```mermaid
+flowchart LR
+    A["User Query<br/>(NL text)"]
+    B["Schema Adapter<br/>(Extract schema)"]
+    C["RAG Retriever<br/>(Top-K examples)"]
+    D["Prompt Builder<br/>(Schema + examples)"]
+    E["Ollama LLM<br/>(Generate SQL)"]
+    F["SQL Validation<br/>(Syntax + SELECT only)"]
+    G["SQLite Engine<br/>(Execute query)"]
+    H{"LLM as Judge<br/>Semantic validation"}
+    I["Results<br/>(JSON)"]
+
+    J["Explain Prompt"]
+    K["Fix Prompt"]
+    L["Semantic Fix Prompt"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+
+    H -->|Valid| I
+    H -->|Invalid Result| L
+    L --> E
+
+    G -->|Execution Error| J
+    J --> K
+    K --> E
 ```
-┌──────────────┐     ┌─────────────────┐     ┌──────────────┐     ┌───────────────┐
-│  User Query  │────▶│ Schema Adapter  │────▶│ RAG Retriever│────▶│ Prompt Builder│
-│  (NL text)   │     │ (extract schema)│     │ (top-K examples)   │ (schema+examples)
-└──────────────┘     └─────────────────┘     └──────────────┘     └───────┬───────┘
-                                                                          │
-                                                                          ▼
-┌──────────────┐     ┌─────────────────┐     ┌──────────────────────────────┐
-│   Results    │◀────│ SQLite Engine   │◀────│  Ollama LLM (qwen2.5-coder) │
-│  (JSON/HTML) │     │ (execute SELECT)│     │  → generates SQL query       │
-└──────────────┘     └─────────────────┘     └──────────────────────────────┘
-```
-
-1. **Schema Extraction** — `SchemaAdapter` reads the SQLite database schema (tables, columns, types, foreign keys)
-2. **RAG Retrieval** — `Retriever` encodes the question with `all-mpnet-base-v2` and finds the top-K most similar examples from the local pool via cosine similarity
-3. **Prompt Construction** — The schema, retrieved examples, and user question are assembled into a structured prompt
-4. **SQL Generation** — Ollama generates a `SELECT` query using the configured LLM
-5. **Execution & Response** — The query is validated with `sqlglot`, executed on the SQLite database, and results are returned
-
----
-
 ## 🌐 API Reference
 
 The application exposes a RESTful API at `http://localhost:8000`.
