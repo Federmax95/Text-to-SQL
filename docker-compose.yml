@@ -47,7 +47,3 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-
-
-volumes:
-  ollama_data:

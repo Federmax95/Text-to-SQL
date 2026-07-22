@@ -643,21 +643,19 @@
             
             const dbStatus = document.getElementById('db-status');
             try {
-                const res = await fetch('/api/set-db', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({db_path: 'spider_data/database/baseball_1/baseball_1.sqlite'})
-                });
+                const res = await fetch('/api/health');
                 const data = await res.json();
-                if (data.success) {
-                    dbStatus.textContent = `Connesso: ${data.db_name} (${data.tables} tabelle)`;
+                if (data.db_ready) {
+                    dbStatus.textContent = `Connesso: ${data.db_name} (DB pronto)`;
                     dbStatus.className = 'small text-success';
                 } else {
-                    dbStatus.textContent = 'Errore caricamento DB precaricato.';
-                    dbStatus.className = 'small text-danger';
+                    dbStatus.textContent = 'DB non ancora configurato.';
+                    dbStatus.className = 'small text-warning';
                 }
             } catch(e) {
-                console.error("Errore autocaricamento DB di esempio", e);
+                console.error("Errore verifica stato DB", e);
+                dbStatus.textContent = 'Errore di connessione al server.';
+                dbStatus.className = 'small text-danger';
             }
         };
     </script>
